@@ -1,0 +1,38 @@
+[Xero]
+xero_user = 
+xero_password = 
+xero_domain = agility
+xero_query_constraints = 
+xero_nodes = 
+xero_restart_command = sudo /opt/agfa/CWP/active/tools/service/startup/./xero-restart -q
+xero_disable_command = sudo service agility-haproxy stop
+xero_server_user = agfaservice
+xero_server_private_key = 
+
+
+[Email]
+;smtp_server = 
+smtp_server = 
+smtp_port = 
+smtp_username =
+smtp_password = None
+smtp_from_domain = 
+;to add multiple receipeints seperate with a comma
+smtp_recipients = 
+
+[ServiceNow]
+api_user = 
+api_password = 
+instance = 
+table = 
+ticket_type = incident
+
+configuration_item = 
+assignment_group = 
+assignee =
+business_hours_start_time = 08:00:00
+business_hours_end_time = 17:00:00
+after_hours_urgency = 3
+after_hours_impact = 3
+business_hours_urgency = 3
+business_hours_impact = 3
