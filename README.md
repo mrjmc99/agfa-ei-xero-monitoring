@@ -11,8 +11,11 @@ Before running the script, ensure the following:
 - Install the required Python packages using the following command:
 
   ```bash
-  pip install requests paramiko
+  pip install -r requirements.txt
   ```
+- SSH key generated on server script will be ran on
+- SSH key imported onto all xero servers for agfaservice user
+- SUDO permissions granted to the agfaservice user for the jboss and haproxy start/stop commands
 
 ## Configuration
 
