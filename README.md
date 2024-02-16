@@ -47,6 +47,9 @@ The script performs the following actions:
 
 4. **Incident Creation in ServiceNow**: In case of server actions, incidents are created in ServiceNow, and email notifications are sent.
 
+5. **Disabled Server Awareness**: In the event a server is disabled by the script, it will be stored in the disabled_servers.txt file, after the server issues have been resolved, it will need to be removed from this list so that it is actively checked again.
+
+
 ## Script Logic
 
 The script is structured as follows:
@@ -64,7 +67,3 @@ The script includes error handling for various scenarios, such as authentication
 ## Support and Issues
 
 For any issues or questions, please create an issue in the [GitHub repository](https://github.com/mrjmc99/agfa-ei-xero-monitoring).
-
-```
-
-Make sure to replace "yourusername" and "yourrepository" with your actual GitHub username and repository name. Additionally, customize the README to provide more specific details based on your use case and audience.
