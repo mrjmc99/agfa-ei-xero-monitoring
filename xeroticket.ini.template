@@ -8,7 +8,9 @@ xero_restart_command = sudo /opt/agfa/CWP/active/tools/service/startup/./xero-re
 xero_disable_command = sudo service agility-haproxy stop
 xero_server_user = agfaservice
 xero_server_private_key = 
-
+xero_get_ticket_timeout = 5
+xero_ticket_validation_timeout = 10
+disabled_servers_file = disabled_servers.txt
 
 [Email]
 ;smtp_server = 
@@ -17,7 +19,7 @@ smtp_port =
 smtp_username =
 smtp_password = None
 smtp_from_domain = 
-;to add multiple receipeints seperate with a comma
+;to add multiple recipients separate with a comma
 smtp_recipients = 
 
 [ServiceNow]

@@ -36,6 +36,9 @@ xero_restart_command = config.get("Xero", "xero_restart_command")
 xero_disable_command = config.get("Xero", "xero_disable_command")
 xero_server_user = config.get("Xero", "xero_server_user")
 xero_server_private_key = config.get("Xero", "xero_server_private_key")
+xero_get_ticket_timeout = int(config.get("Xero", "xero_get_ticket_timeout"))
+xero_ticket_validation_timeout = int(config.get("Xero", "xero_ticket_validation_timeout"))
+disabled_servers_file = os.path.join(script_dir, config.get("Xero", "disabled_servers_file"))
 
 # email variables
 smtp_server = config.get("Email", "smtp_server")
@@ -43,7 +46,6 @@ smtp_port = int(config.get("Email", "smtp_port"))
 smtp_username = config.get("Email", "smtp_username")
 smtp_password = config.get("Email", "smtp_password")
 smtp_from_domain = config.get("Email", "smtp_from_domain")
-
 smtp_recipients_string = config.get("Email", "smtp_recipients")
 smtp_recipients = smtp_recipients_string.split(",")
 
@@ -83,6 +85,25 @@ impact = after_hours_urgency  # Default value for after hours and weekends
 if business_hours_start <= current_time <= business_hours_end and current_day < 5:  # Monday to Friday
     urgency = business_hours_urgency
     impact = business_hours_impact
+
+
+def load_disabled_servers():
+    try:
+        with open(disabled_servers_file, 'r') as file:
+            disabled_servers = file.read().splitlines()
+        return disabled_servers
+    except FileNotFoundError:
+        return []
+
+
+def save_disabled_server(xero_server):
+    with open(disabled_servers_file, 'a') as file:
+        file.write(f"{xero_server}\n")
+
+
+def is_server_disabled(xero_server):
+    disabled_servers = load_disabled_servers()
+    return xero_server in disabled_servers
 
 
 def send_email(smtp_recipients, subject, body, node):
@@ -155,7 +176,7 @@ def get_xero_ticket(xero_server):
 
     try:
         print(f"Testing Ticket Creation for {xero_server}")
-        response = requests.request("POST", api_url, headers=headers, data=payload, verify=False, timeout=2)
+        response = requests.request("POST", api_url, headers=headers, data=payload, verify=False, timeout=xero_get_ticket_timeout)
 
         print(f"{xero_server} Ticket Creation Response Status Code:",
               response.status_code)  # Print status code for debugging
@@ -181,7 +202,7 @@ def verify_ticket(xero_server, xero_ticket):
         # Append the ticket as a query parameter to the verification URL
         verification_url = f"https://{xero_server}/?PatientID=123456789&AccessionNumber=TRAIN195&theme=patientportal&ticket={xero_ticket}"
 
-        response = requests.get(verification_url, verify=False, timeout=10)
+        response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
         print(f"Verification URL Response Status Code: {response.status_code}")
         # print(f"Verification URL Response Content: {response.text}")
@@ -357,6 +378,11 @@ def execute_remote_command(hostname, username, private_key_path, command):
 
 
 for node in xero_nodes:
+    # Skip testing if the server is already disabled
+    if is_server_disabled(node):
+        print(f"Skipping {node} - Server is already disabled.")
+        continue
+
     local_time_str = datetime.now().time()
     xero_ticket = get_xero_ticket(node)
 
@@ -379,6 +405,4 @@ for node in xero_nodes:
                 send_email(smtp_recipients, subject, body, node)
         else:
             disable_xero_server(node)
-
-        # if restart_xero_server fails, execute another action called create_service_now_ticket
-        # test again if fails 2nd time execute another action called create_service_now_ticket
+            save_disabled_server(node)  # Save the disabled server to the file

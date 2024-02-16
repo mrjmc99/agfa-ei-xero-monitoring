@@ -2,6 +2,7 @@
 /.idea
 *.log
 id_rsa
+disabled_servers.txt
 # Environments
 .env
 .venv
