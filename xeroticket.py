@@ -7,7 +7,7 @@ import uuid
 from time import sleep
 import smtplib
 from email.mime.text import MIMEText
-from datetime import datetime,time
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(
@@ -26,7 +26,7 @@ config_file_path = os.path.join(script_dir, "xeroticket.ini")
 config = configparser.ConfigParser()
 config.read(config_file_path)
 
-#Xero API Variables
+# Xero API Variables
 xero_user = config.get("Xero", "xero_user")
 xero_password = config.get("Xero", "xero_password")
 xero_domain = config.get("Xero", "xero_domain")
@@ -37,18 +37,17 @@ xero_disable_command = config.get("Xero", "xero_disable_command")
 xero_server_user = config.get("Xero", "xero_server_user")
 xero_server_private_key = config.get("Xero", "xero_server_private_key")
 
-#email variables
+# email variables
 smtp_server = config.get("Email", "smtp_server")
-smtp_port = config.get("Email", "smtp_port")
+smtp_port = int(config.get("Email", "smtp_port"))
 smtp_username = config.get("Email", "smtp_username")
 smtp_password = config.get("Email", "smtp_password")
 smtp_from_domain = config.get("Email", "smtp_from_domain")
-smtp_from = f"{os.environ['COMPUTERNAME']}@{smtp_from_domain}"
+
 smtp_recipients_string = config.get("Email", "smtp_recipients")
 smtp_recipients = smtp_recipients_string.split(",")
 
-
-#service now variables
+# service now variables
 service_now_instance = config.get("ServiceNow", "instance")
 service_now_table = config.get("ServiceNow", "table")
 service_now_api_user = config.get("ServiceNow", "api_user")
@@ -64,8 +63,8 @@ after_hours_impact = config.get("ServiceNow", "after_hours_impact")
 business_hours_urgency = config.get("ServiceNow", "business_hours_urgency")
 business_hours_impact = config.get("ServiceNow", "business_hours_impact")
 
-#print(f"xero_restart_command: {xero_restart_command}")
-#print(f"xero_disable_command: {xero_disable_command}")
+# print(f"xero_restart_command: {xero_restart_command}")
+# print(f"xero_disable_command: {xero_disable_command}")
 
 
 # Get the current time and day of the week
@@ -78,7 +77,7 @@ business_hours_end = datetime.strptime(business_hours_end_time, "%H:%M:%S").time
 
 # Set default values
 urgency = after_hours_urgency  # Default value for after hours and weekends
-impact = after_hours_urgency   # Default value for after hours and weekends
+impact = after_hours_urgency  # Default value for after hours and weekends
 
 # Check if it's business hours
 if business_hours_start <= current_time <= business_hours_end and current_day < 5:  # Monday to Friday
@@ -86,9 +85,10 @@ if business_hours_start <= current_time <= business_hours_end and current_day < 
     impact = business_hours_impact
 
 
-def send_email(smtp_recipients, subject, body):
+def send_email(smtp_recipients, subject, body, node):
+    smtp_from = f"{node}@{smtp_from_domain}"
     msg = MIMEText(body)
-    msg["From"] = smtp_from
+    msg["From"] = node
     msg["To"] = ", ".join(smtp_recipients)  # Join smtp_recipients with a comma and space
     msg["Subject"] = subject
 
@@ -99,6 +99,7 @@ def send_email(smtp_recipients, subject, body):
         print(f"Email sent to {', '.join(smtp_recipients)}")
     except Exception as e:
         print(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
+
 
 def create_service_now_incident(summary, description, configuration_item, external_unique_id, urgency, impact):
     incident_api_url = f"https://{service_now_instance}/api/now/table/{service_now_table}"
@@ -121,7 +122,7 @@ def create_service_now_incident(summary, description, configuration_item, extern
     }
 
     try:
-        #print("Incident Creation Payload:", payload)  # Print payload for debugging
+        # print("Incident Creation Payload:", payload)  # Print payload for debugging
         response = requests.post(
             incident_api_url,
             headers=headers,
@@ -129,8 +130,8 @@ def create_service_now_incident(summary, description, configuration_item, extern
             json=payload,
         )
 
-        #print("Incident Creation Response Status Code:", response.status_code)  # Print status code for debugging
-        #print("Incident Creation Response Content:", response.text)  # Print response content for debugging
+        # print("Incident Creation Response Status Code:", response.status_code)  # Print status code for debugging
+        # print("Incident Creation Response Content:", response.text)  # Print response content for debugging
 
         if response.status_code == 201:
             incident_number = response.json().get("result", {}).get("u_task_string")
@@ -158,13 +159,13 @@ def get_xero_ticket(xero_server):
 
         print(f"{xero_server} Ticket Creation Response Status Code:",
               response.status_code)  # Print status code for debugging
-        #print(f"{xero_server} Ticket Creation Response Content:",
-              #response.text)  # Print response content for debugging
+        # print(f"{xero_server} Ticket Creation Response Content:",
+        # response.text)  # Print response content for debugging
         xero_ticket = response.text
 
         if response.status_code == 200:
             print(f"{xero_server} created a ticket successfully")
-            return  xero_ticket
+            return xero_ticket
         else:
             print(f"{xero_server} Ticket Creation Failure")
             return None
@@ -174,15 +175,16 @@ def get_xero_ticket(xero_server):
 
     return None
 
+
 def verify_ticket(xero_server, xero_ticket):
     try:
         # Append the ticket as a query parameter to the verification URL
         verification_url = f"https://{xero_server}/?PatientID=123456789&AccessionNumber=TRAIN195&theme=patientportal&ticket={xero_ticket}"
 
-        response = requests.get(verification_url, verify=False, timeout=2)
+        response = requests.get(verification_url, verify=False, timeout=10)
 
         print(f"Verification URL Response Status Code: {response.status_code}")
-        #print(f"Verification URL Response Content: {response.text}")
+        # print(f"Verification URL Response Content: {response.text}")
 
         if response.status_code == 200:
             print("Ticket verification successful")
@@ -207,25 +209,25 @@ def restart_xero_server(xero_server):
         )
     except paramiko.AuthenticationException as auth_error:
         logging.error(f"Authentication failed while restarting Xero server ({xero_server}): {auth_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
-                    incident_summary, incident_description,
-                    configuration_item, external_unique_id,
-                    urgency, impact
-                )
+            incident_summary, incident_description,
+            configuration_item, external_unique_id,
+            urgency, impact
+        )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     except paramiko.SSHException as ssh_error:
         logging.error(f"SSH connection error while restarting Xero server ({xero_server}): {ssh_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
@@ -235,13 +237,13 @@ def restart_xero_server(xero_server):
         )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     except Exception as e:
         logging.error(f"Error restarting Xero server ({xero_server}): {e}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
@@ -251,12 +253,13 @@ def restart_xero_server(xero_server):
         )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     else:
         logging.info(f"Xero server restarted successfully: {result}")
 
     return result  # Return the result or another suitable value
+
 
 def disable_xero_server(xero_server):
     try:
@@ -269,25 +272,25 @@ def disable_xero_server(xero_server):
         )
     except paramiko.AuthenticationException as auth_error:
         logging.error(f"Authentication failed while Disabling Xero server ({xero_server}): {auth_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
-                    incident_summary, incident_description,
-                    configuration_item, external_unique_id,
-                    urgency, impact
-                )
+            incident_summary, incident_description,
+            configuration_item, external_unique_id,
+            urgency, impact
+        )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     except paramiko.SSHException as ssh_error:
         logging.error(f"SSH connection error while Disabling Xero server ({xero_server}): {ssh_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
@@ -297,13 +300,13 @@ def disable_xero_server(xero_server):
         )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     except Exception as e:
         logging.error(f"Error Disabling Xero server ({xero_server}): {e}")
-        subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server)"
+        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
+        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
@@ -313,13 +316,13 @@ def disable_xero_server(xero_server):
         )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
-        subject = f"Xero Ticketing/Image Display has been Disabled on {node} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Disabled on {node} at {local_time_str}"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {node} at {local_time_str} (Server Disabled)"
+        subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
+        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
+        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Server Disabled)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
         incident_number = create_service_now_incident(
@@ -329,8 +332,8 @@ def disable_xero_server(xero_server):
         )
         if incident_number:
             print(incident_number)
-            subject = f"Xero Ticketing/Image Display has been Disabled on {node} at {local_time_str} {incident_number}"
-        send_email(smtp_recipients, subject, body)
+            subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str} {incident_number}"
+        send_email(smtp_recipients, subject, body, xero_server)
     return result  # Return the result or another suitable value
 
 
@@ -373,9 +376,9 @@ for node in xero_nodes:
             if verification_status:
                 subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
                 body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                send_email(smtp_recipients, subject, body)
+                send_email(smtp_recipients, subject, body, node)
         else:
             disable_xero_server(node)
 
-        #if restart_xero_server fails, execute another action called create_service_now_ticket
-        #test again if fails 2nd time execute another action called create_service_now_ticket
+        # if restart_xero_server fails, execute another action called create_service_now_ticket
+        # test again if fails 2nd time execute another action called create_service_now_ticket
