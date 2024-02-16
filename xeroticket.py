@@ -109,7 +109,7 @@ def is_server_disabled(xero_server):
 def send_email(smtp_recipients, subject, body, node):
     smtp_from = f"{node}@{smtp_from_domain}"
     msg = MIMEText(body)
-    msg["From"] = node
+    msg["From"] = smtp_from
     msg["To"] = ", ".join(smtp_recipients)  # Join smtp_recipients with a comma and space
     msg["Subject"] = subject
 
