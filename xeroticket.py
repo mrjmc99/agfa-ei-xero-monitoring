@@ -1,3 +1,7 @@
+import base64
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+
 import requests
 import os
 import configparser
@@ -8,6 +12,7 @@ from time import sleep
 import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
 
 # Set up logging
 logging.basicConfig(
@@ -49,6 +54,13 @@ smtp_from_domain = config.get("Email", "smtp_from_domain")
 smtp_recipients_string = config.get("Email", "smtp_recipients")
 smtp_recipients = smtp_recipients_string.split(",")
 
+# meme variables
+use_memes = bool(config.get("Meme", "use_memes"))
+successful_restart_meme_path = os.path.join(script_dir, 'memes', config.get("Meme", "successful_restart_meme"))
+unsuccessful_restart_meme_path = os.path.join(script_dir, 'memes', config.get("Meme", "unsuccessful_restart_meme"))
+temp_meme_path = os.path.join(script_dir, os.path.dirname('memes'), 'temp_meme.jpg')
+font_path = os.path.join(script_dir, 'fonts', config.get("Meme", "font"))
+
 # service now variables
 service_now_instance = config.get("ServiceNow", "instance")
 service_now_table = config.get("ServiceNow", "table")
@@ -87,6 +99,29 @@ if business_hours_start <= current_time <= business_hours_end and current_day < 
     impact = business_hours_impact
 
 
+def generate_meme(image_path, top_text, bottom_text, output_path):
+    # Open the image
+    img = Image.open(image_path)
+    draw = ImageDraw.Draw(img)
+
+    # Load a TrueType font
+    font_size = 20  # Adjust the font size as needed
+    font = ImageFont.truetype(font_path, font_size)
+
+    # Add top text
+    top_text_width = draw.textlength(top_text, font)
+    draw.text(((img.width - top_text_width) // 2, 10), top_text, (255, 255, 255), font=font)
+
+    # Add bottom text
+    bottom_text_width = draw.textlength(bottom_text, font)
+    draw.text(((img.width - bottom_text_width) // 2, img.height - 10), bottom_text, (255, 255, 255), font=font)
+
+    # Save the meme
+    img.save(output_path)
+    return output_path
+
+
+# Function to load disabled servers from file
 def load_disabled_servers():
     try:
         with open(disabled_servers_file, 'r') as file:
@@ -96,16 +131,26 @@ def load_disabled_servers():
         return []
 
 
+# Function to Save disabled servers to file
 def save_disabled_server(xero_server):
     with open(disabled_servers_file, 'a') as file:
         file.write(f"{xero_server}\n")
 
 
+# Function to check for disabled server from file
 def is_server_disabled(xero_server):
     disabled_servers = load_disabled_servers()
     return xero_server in disabled_servers
 
 
+# Function to encode an image as base64
+def image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+    return encoded_image
+
+
+# Function to send plain text email
 def send_email(smtp_recipients, subject, body, node):
     smtp_from = f"{node}@{smtp_from_domain}"
     msg = MIMEText(body)
@@ -120,6 +165,35 @@ def send_email(smtp_recipients, subject, body, node):
         print(f"Email sent to {', '.join(smtp_recipients)}")
     except Exception as e:
         print(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
+
+
+# Function to send an email with the generated meme embedded in the body
+def send_email_meme(smtp_recipients, subject, body, node, meme_path):
+    smtp_from = f"{node}@{smtp_from_domain}"
+    msg = MIMEMultipart()
+    msg["From"] = smtp_from
+    msg["To"] = ", ".join(smtp_recipients)  # Join smtp_recipients with a comma and space
+    msg["Subject"] = subject
+
+    # Attach the text body
+    msg.attach(MIMEText(body, 'plain'))
+
+    # Embed the generated meme in the body
+    meme_data = image_to_base64(meme_path)
+    meme_cid = 'meme_image'
+    msg.attach(MIMEText(f'<img src="data:image/jpeg;base64,{meme_data}" alt="Meme" />', 'html'))
+    msg.attach(MIMEImage(base64.b64decode(meme_data), name='meme.jpg'))
+    msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
+    msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
+
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.sendmail(smtp_from, smtp_recipients, msg.as_string())
+        server.quit()
+        print(f"Meme Email sent to {', '.join(smtp_recipients)}")
+    except Exception as e:
+        print(f"Meme Email sending failed to {', '.join(smtp_recipients)}: {e}")
+
 
 
 def create_service_now_incident(summary, description, configuration_item, external_unique_id, urgency, impact):
@@ -306,7 +380,12 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
+        if use_memes is True:
+            generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
+            send_email_meme(smtp_recipients, subject, body, xero_server, disabled_meme)
+            os.remove(temp_meme_path)
+        else:
+            send_email(smtp_recipients, subject, body, xero_server)
     except paramiko.SSHException as ssh_error:
         logging.error(f"SSH connection error while Disabling Xero server ({xero_server}): {ssh_error}")
         subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
@@ -322,7 +401,12 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
+        if use_memes is True:
+            disabled_meme = generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
+            send_email_meme(smtp_recipients, subject, body, xero_server, disabled_meme)
+            os.remove(temp_meme_path)
+        else:
+            send_email(smtp_recipients, subject, body, xero_server)
     except Exception as e:
         logging.error(f"Error Disabling Xero server ({xero_server}): {e}")
         subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
@@ -338,7 +422,12 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
+        if use_memes is True:
+            disabled_meme = generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
+            send_email_meme(smtp_recipients, subject, body, xero_server, disabled_meme)
+            os.remove(temp_meme_path)
+        else:
+            send_email(smtp_recipients, subject, body, xero_server)
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
         subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
@@ -354,7 +443,12 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str} {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
+        if use_memes:
+            disabled_meme = generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
+            send_email_meme(smtp_recipients, subject, body, xero_server, disabled_meme)
+            os.remove(temp_meme_path)
+        else:
+            send_email(smtp_recipients, subject, body, xero_server)
     return result  # Return the result or another suitable value
 
 

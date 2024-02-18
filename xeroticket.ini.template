@@ -38,3 +38,9 @@ after_hours_urgency = 3
 after_hours_impact = 3
 business_hours_urgency = 3
 business_hours_impact = 3
+
+[Meme]
+use_memes = True
+successful_restart_meme = No_Need_To_Thank_Me.jpg
+unsuccessful_restart_meme = Boromir.jpg
+font = Impact.ttf
