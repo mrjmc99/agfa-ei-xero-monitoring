@@ -13,6 +13,7 @@ import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
+from email.message import EmailMessage
 
 # Set up logging
 logging.basicConfig(
@@ -168,27 +169,27 @@ def send_email(smtp_recipients, subject, body, node):
 
 
 # Function to send an email with the generated meme embedded in the body
+# Function to send an email with the generated meme embedded in the body
 def send_email_meme(smtp_recipients, subject, body, node, meme_path):
     smtp_from = f"{node}@{smtp_from_domain}"
-    msg = MIMEMultipart()
+    msg = EmailMessage()
     msg["From"] = smtp_from
     msg["To"] = ", ".join(smtp_recipients)  # Join smtp_recipients with a comma and space
     msg["Subject"] = subject
 
     # Attach the text body
-    msg.attach(MIMEText(body, 'plain'))
+    msg.set_content(body)
 
     # Embed the generated meme in the body
     meme_data = image_to_base64(meme_path)
-    meme_cid = 'meme_image'
-    msg.attach(MIMEText(f'<img src="data:image/jpeg;base64,{meme_data}" alt="Meme" />', 'html'))
-    msg.attach(MIMEImage(base64.b64decode(meme_data), name='meme.jpg'))
-    msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
-    msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
+    meme_cid = f'meme_image_{hash(meme_data)}'  # Use hash to create a dynamic and unique identifier
+
+    # Add the image as an inline attachment
+    msg.add_attachment(base64.b64decode(meme_data), maintype='image', subtype='jpeg', cid=meme_cid)
 
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
-        server.sendmail(smtp_from, smtp_recipients, msg.as_string())
+        server.send_message(msg)
         server.quit()
         print(f"Meme Email sent to {', '.join(smtp_recipients)}")
     except Exception as e:
