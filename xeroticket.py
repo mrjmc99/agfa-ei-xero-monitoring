@@ -195,6 +195,13 @@ def send_email_meme(smtp_recipients, subject, body, node, meme_path):
     except Exception as e:
         print(f"Meme Email sending failed to {', '.join(smtp_recipients)}: {e}")
 
+def test_meme_email():
+    subject = "subject text"
+    body = "body text"
+    xero_server = 'ADCVWEBPACLX502'
+    generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
+    send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
+    os.remove(temp_meme_path)
 
 
 def create_service_now_incident(summary, description, configuration_item, external_unique_id, urgency, impact):
@@ -472,32 +479,38 @@ def execute_remote_command(hostname, username, private_key_path, command):
         return None
 
 
-for node in xero_nodes:
-    # Skip testing if the server is already disabled
-    if is_server_disabled(node):
-        print(f"Skipping {node} - Server is already disabled.")
-        continue
+def main():
+    for node in xero_nodes:
+        # Skip testing if the server is already disabled
+        if is_server_disabled(node):
+            print(f"Skipping {node} - Server is already disabled.")
+            continue
 
-    local_time_str = datetime.now().time()
-    xero_ticket = get_xero_ticket(node)
-
-    if xero_ticket:
-        verification_status = verify_ticket(node, xero_ticket)
-
-    else:
-        print(f"Ticket verification failed for {node}")
-        restart_xero_server(node)
-        print("Restart Completed, waiting 10 seconds to retest")
-        sleep(10)
+        local_time_str = datetime.now().time()
         xero_ticket = get_xero_ticket(node)
 
         if xero_ticket:
             verification_status = verify_ticket(node, xero_ticket)
 
-            if verification_status:
-                subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                send_email(smtp_recipients, subject, body, node)
         else:
-            disable_xero_server(node)
-            save_disabled_server(node)  # Save the disabled server to the file
+            print(f"Ticket verification failed for {node}")
+            restart_xero_server(node)
+            print("Restart Completed, waiting 10 seconds to retest")
+            sleep(10)
+            xero_ticket = get_xero_ticket(node)
+
+            if xero_ticket:
+                verification_status = verify_ticket(node, xero_ticket)
+
+                if verification_status:
+                    subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                    body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                    send_email(smtp_recipients, subject, body, node)
+            else:
+                disable_xero_server(node)
+                save_disabled_server(node)  # Save the disabled server to the file
+
+
+if __name__ == "__main__":
+    #main()
+    test_meme_email()
