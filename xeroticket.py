@@ -168,24 +168,21 @@ def send_email(smtp_recipients, subject, body, node):
         print(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
 
 
-# Function to send an email with the generated meme embedded in the body
+
 # Function to send an email with the generated meme embedded in the body
 def send_email_meme(smtp_recipients, subject, body, node, meme_path):
     smtp_from = f"{node}@{smtp_from_domain}"
-    msg = EmailMessage()
+    msg = MIMEMultipart('alternative')
     msg["From"] = smtp_from
     msg["To"] = ", ".join(smtp_recipients)  # Join smtp_recipients with a comma and space
     msg["Subject"] = subject
-
+    body = MIMEText(f'{body}<br><img src="cid:meme_cid">', 'html')
     # Attach the text body
-    msg.set_content(body)
+    msg.attach(body)
 
-    # Embed the generated meme in the body
-    meme_data = image_to_base64(meme_path)
-    meme_cid = f'meme_image_{hash(meme_data)}'  # Use hash to create a dynamic and unique identifier
-
-    # Add the image as an inline attachment
-    msg.add_attachment(base64.b64decode(meme_data), maintype='image', subtype='jpeg', cid=meme_cid)
+    image = MIMEImage(open(meme_path, 'rb').read())
+    image.add_header('Content-ID', '<meme_cid>')
+    msg.attach(image)
 
     try:
         server = smtplib.SMTP(smtp_server, smtp_port)
@@ -196,9 +193,9 @@ def send_email_meme(smtp_recipients, subject, body, node, meme_path):
         print(f"Meme Email sending failed to {', '.join(smtp_recipients)}: {e}")
 
 def test_meme_email():
-    subject = "subject text"
-    body = "body text"
     xero_server = 'ADCVWEBPACLX502'
+    subject = "subject text"
+    body = f"body text RESTART XERO SERVICES ON {xero_server}"
     generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
     send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
     os.remove(temp_meme_path)
