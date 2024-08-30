@@ -11,6 +11,7 @@ xero_server_private_key =
 xero_get_ticket_timeout = 5
 xero_ticket_validation_timeout = 10
 disabled_servers_file = disabled_servers.txt
+xero_wado = False
 
 [Email]
 ;smtp_server = 

@@ -43,6 +43,7 @@ xero_server_user = config.get("Xero", "xero_server_user")
 xero_server_private_key = config.get("Xero", "xero_server_private_key")
 xero_get_ticket_timeout = int(config.get("Xero", "xero_get_ticket_timeout"))
 xero_ticket_validation_timeout = int(config.get("Xero", "xero_ticket_validation_timeout"))
+xero_wado = ast.literal_eval(config.get("Xero", "xero_wado"))
 disabled_servers_file = os.path.join(script_dir, config.get("Xero", "disabled_servers_file"))
 
 # email variables
@@ -321,8 +322,6 @@ def clear_wado_cache(xero_server):
     return None
 
 
-
-
 def restart_xero_server(xero_server):
     try:
         print("attempting to restart xero")
@@ -383,7 +382,7 @@ def restart_xero_server(xero_server):
     else:
         logging.info(f"Xero server restarted successfully: {result}")
 
-    return result  # Return the result or another suitable value
+    return result
 
 
 def disable_xero_server(xero_server):
@@ -528,20 +527,24 @@ for node in xero_nodes:
                 body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
                 send_email(smtp_recipients, subject, body, node)
         else:
-            wado_cache = clear_wado_cache(node)
+            if xero_wado:
+                wado_cache = clear_wado_cache(node)
 
-            if wado_cache:
-                print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
-                sleep(10)
-                xero_ticket = get_xero_ticket(node)
+                if wado_cache:
+                    print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
+                    sleep(10)
+                    xero_ticket = get_xero_ticket(node)
 
-                if xero_ticket:
-                    verification_status = verify_ticket(node, xero_ticket)
+                    if xero_ticket:
+                        verification_status = verify_ticket(node, xero_ticket)
 
-                    if verification_status:
-                        subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                        body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                        send_email(smtp_recipients, subject, body, node)
+                        if verification_status:
+                            subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
+                            body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
+                            send_email(smtp_recipients, subject, body, node)
+                else:
+                    disable_xero_server(node)
+                    save_disabled_server(node)  # Save the disabled server to the file
             else:
                 disable_xero_server(node)
                 save_disabled_server(node)  # Save the disabled server to the file
