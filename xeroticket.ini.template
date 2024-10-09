@@ -12,6 +12,9 @@ xero_get_ticket_timeout = 5
 xero_ticket_validation_timeout = 10
 disabled_servers_file = disabled_servers.txt
 xero_wado = False
+validation_study_PatientID =
+validation_study_AccessionNumber =
+theme =
 
 [Email]
 ;smtp_server = 

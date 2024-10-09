@@ -1,5 +1,6 @@
 import base64
 import json
+import urllib
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 import ast
@@ -46,7 +47,15 @@ xero_server_private_key = config.get("Xero", "xero_server_private_key")
 xero_get_ticket_timeout = int(config.get("Xero", "xero_get_ticket_timeout"))
 xero_ticket_validation_timeout = int(config.get("Xero", "xero_ticket_validation_timeout"))
 xero_wado = ast.literal_eval(config.get("Xero", "xero_wado"))
+validation_study_PatientID = config.get("Xero", "validation_study_PatientID")
+validation_study_AccessionNumber = config.get("Xero", "validation_study_AccessionNumber")
+xero_theme = config.get("Xero", "theme")
 disabled_servers_file = os.path.join(script_dir, config.get("Xero", "disabled_servers_file"))
+
+query_constraints = f"PatientID={validation_study_PatientID}, AccessionNumber={validation_study_AccessionNumber}"
+display_vars = f"theme={xero_theme}, PatientID={validation_study_PatientID}, AccessionNumber={validation_study_AccessionNumber}"
+
+
 
 # email variables
 smtp_server = config.get("Email", "smtp_server")
@@ -267,8 +276,46 @@ def create_service_now_incident(summary, description, configuration_item, extern
 
     return None
 
-
 def get_xero_ticket(xero_server):
+    api_url = f"https://{xero_server}/encodedTicket"
+
+    # URL encode the query constraints and display vars
+    query_constraints_encoded = urllib.parse.quote(query_constraints)
+    display_vars_encoded = urllib.parse.quote(display_vars)
+    #print(query_constraints_encoded)
+    #print(display_vars_encoded)
+    payload = {
+        "user": xero_user,
+        "password": xero_password,
+        "domain": xero_domain,
+        "queryConstraints": query_constraints_encoded,
+        #"initialDisplay": display_vars_encoded,
+        "ticketDuration": "300",
+        "uriEncodedTicket": "true",
+        "ticketUser": "TICKET_TESTING_USER",
+        "ticketRoles": "EprUser",
+    }
+
+    headers = {}
+
+    try:
+        print(f"Testing Ticket Creation for {xero_server}")
+        response = requests.post(api_url, headers=headers, data=payload, verify=False)
+        print(f"{xero_server} Ticket Creation Response Status Code:",
+              response.status_code)  # Print status code for debugging
+        if response.status_code == 200:
+            print(f"{xero_server} created a ticket successfully")
+            #print(response.text)
+            return response.text
+        else:
+            print(f"{xero_server} Ticket Creation Failure")
+            return None
+
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred while attempting to create xero tickets on {xero_server}: {e}")
+        return None
+
+def get_xero_ticket_old(xero_server):
     api_url = f"https://{xero_server}/encodedTicket?user={xero_user}&password={xero_password}&ticketUser=TICKET_TESTING_USER&ticketDuration=600&ticketRoles=EprUser&queryConstraints={xero_query_constraints}&uriEncodedTicket=true&domain={xero_domain}"
 
     payload = {}
@@ -300,8 +347,10 @@ def get_xero_ticket(xero_server):
 def verify_ticket(xero_server, xero_ticket):
     try:
         # Append the ticket as a query parameter to the verification URL
-        verification_url = f"https://{xero_server}/?PatientID=123456789&AccessionNumber=TRAIN195&theme=patientportal&ticket={xero_ticket}"
-
+        #verification_url = f"https://{xero_server}/?ticket={xero_ticket}"
+        verification_url = f"https://{xero_server}/?PatientID={validation_study_PatientID}&AccessionNumber={validation_study_AccessionNumber}&theme={xero_theme}&ticket={xero_ticket}"
+        print(verification_url)
+        #print(xero_ticket)
         response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
         print(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
