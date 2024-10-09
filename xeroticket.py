@@ -14,6 +14,7 @@ import smtplib
 from email.mime.text import MIMEText
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
+import concurrent.futures
 
 # Set up logging
 logging.basicConfig(
@@ -455,21 +456,73 @@ def execute_remote_command(hostname, username, private_key_path, command):
         print(f"Error executing remote command: {e}")
         return None
 
-def main():
+def test_xero(xero_server,xero_ticket):
+    verification_status = verify_ticket(xero_server, xero_ticket)
+    if verification_status:
+        if is_server_disabled(xero_server):
+            print(f"Xero services restored on {xero_server}, removing from Disabled Servers File")
+            remove_disabled_server(xero_server)
+            return True
+        return True
+    else:
+        print(f"Ticket Validation failed for {xero_server}")
+        if is_server_disabled(xero_server):
+            print(f"Skipping {xero_server} - Server is already disabled.")
+            return False
+        restart_xero_server(xero_server)
+        print("Restart Completed, waiting 10 seconds to retest")
+        sleep(10)
+        verification_status = verify_ticket(xero_server, xero_ticket)
+        if verification_status:
+            subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
+            body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
+            send_email(smtp_recipients, subject, body, xero_server)
+            return True
+        return False
+
+def wado_clear_and_retest(xero_server):
+    wado_cache = clear_wado_cache(xero_server)
+
+    if wado_cache:
+        print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
+        sleep(10)
+        xero_ticket = get_xero_ticket(xero_server)
+
+        if xero_ticket:
+            verification_status = verify_ticket(xero_server, xero_ticket)
+
+            if verification_status:
+                subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str} (Cluster Wado Cache Cleared)"
+                body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str} (Cluster Wado Cache Cleared)"
+                send_email(smtp_recipients, subject, body, xero_server)
+            else:
+                disable_xero_server(xero_server)
+                return
+    else:
+        disable_xero_server(xero_server)
+    return
+
+def process_node(node):
     for node in xero_nodes:
         xero_ticket = get_xero_ticket(node)
 
         if xero_ticket:
-            verification_status = verify_ticket(node, xero_ticket)
-            if is_server_disabled(node):
-                print(f"Xero services restored on {node}, removing from Disabled Servers File")
-                remove_disabled_server(node)
-                continue
+            test_xero(node,xero_ticket)
+            if test_xero:
+                return
+            else:
+                if is_server_disabled(node):
+                    print(f"Skipping {node} - Server is already disabled.")
+                    return
+                else:
+                    if xero_wado:
+                        wado_clear_and_retest(node)
+                    else:
+                        disable_xero_server(node)
         else:
             if is_server_disabled(node):
                 print(f"Skipping {node} - Server is already disabled.")
-                continue
-
+                return
             print(f"Ticket Creation failed for {node}")
             restart_xero_server(node)
             print("Restart Completed, waiting 10 seconds to retest")
@@ -478,31 +531,22 @@ def main():
 
             if xero_ticket:
                 verification_status = verify_ticket(node, xero_ticket)
-
                 if verification_status:
-                    subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                    body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                    send_email(smtp_recipients, subject, body, node)
-            else:
-                if xero_wado:
-                    wado_cache = clear_wado_cache(node)
-
-                    if wado_cache:
-                        print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
-                        sleep(10)
-                        xero_ticket = get_xero_ticket(node)
-
-                        if xero_ticket:
-                            verification_status = verify_ticket(node, xero_ticket)
-
-                            if verification_status:
-                                subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                                body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                                send_email(smtp_recipients, subject, body, node)
+                    return
+                else:
+                    if xero_wado:
+                        wado_clear_and_retest(node)
                     else:
                         disable_xero_server(node)
-                else:
-                    disable_xero_server(node)
+                        return
+            else:
+                print(f"Ticket Creation failed for {node} Disabling Server")
+                disable_xero_server(node)
+
+
+def main():
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(process_node, xero_nodes)
 
 
 if __name__ == '__main__':
