@@ -503,45 +503,44 @@ def wado_clear_and_retest(xero_server):
     return
 
 def process_node(node):
-    for node in xero_nodes:
-        xero_ticket = get_xero_ticket(node)
+    xero_ticket = get_xero_ticket(node)
 
-        if xero_ticket:
-            test_xero(node,xero_ticket)
-            if test_xero:
-                return
-            else:
-                if is_server_disabled(node):
-                    print(f"Skipping {node} - Server is already disabled.")
-                    return
-                else:
-                    if xero_wado:
-                        wado_clear_and_retest(node)
-                    else:
-                        disable_xero_server(node)
+    if xero_ticket:
+        test_xero(node,xero_ticket)
+        if test_xero:
+            return
         else:
             if is_server_disabled(node):
                 print(f"Skipping {node} - Server is already disabled.")
                 return
-            print(f"Ticket Creation failed for {node}")
-            restart_xero_server(node)
-            print("Restart Completed, waiting 10 seconds to retest")
-            sleep(10)
-            xero_ticket = get_xero_ticket(node)
-
-            if xero_ticket:
-                verification_status = verify_ticket(node, xero_ticket)
-                if verification_status:
-                    return
-                else:
-                    if xero_wado:
-                        wado_clear_and_retest(node)
-                    else:
-                        disable_xero_server(node)
-                        return
             else:
-                print(f"Ticket Creation failed for {node} Disabling Server")
-                disable_xero_server(node)
+                if xero_wado:
+                    wado_clear_and_retest(node)
+                else:
+                    disable_xero_server(node)
+    else:
+        if is_server_disabled(node):
+            print(f"Skipping {node} - Server is already disabled.")
+            return
+        print(f"Ticket Creation failed for {node}")
+        restart_xero_server(node)
+        print("Restart Completed, waiting 10 seconds to retest")
+        sleep(10)
+        xero_ticket = get_xero_ticket(node)
+
+        if xero_ticket:
+            verification_status = verify_ticket(node, xero_ticket)
+            if verification_status:
+                return
+            else:
+                if xero_wado:
+                    wado_clear_and_retest(node)
+                else:
+                    disable_xero_server(node)
+                    return
+        else:
+            print(f"Ticket Creation failed for {node} Disabling Server")
+            disable_xero_server(node)
 
 
 def main():
