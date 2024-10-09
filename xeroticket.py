@@ -1,4 +1,5 @@
 import base64
+import json
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 import ast
@@ -99,6 +100,7 @@ if business_hours_start <= current_time <= business_hours_end and current_day < 
     urgency = business_hours_urgency
     impact = business_hours_impact
 
+local_time_str = datetime.now().time()
 
 def generate_meme(image_path, top_text, bottom_text, output_path):
     # Open the image
@@ -126,22 +128,44 @@ def generate_meme(image_path, top_text, bottom_text, output_path):
 def load_disabled_servers():
     try:
         with open(disabled_servers_file, 'r') as file:
-            disabled_servers = file.read().splitlines()
+            content = file.read().strip()
+            if not content:  # Check if the file is blank
+                raise ValueError("File is blank")
+            disabled_servers = json.loads(content)  # Load as JSON
         return disabled_servers
-    except FileNotFoundError:
-        return []
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        # Create a new file or replace a blank file with an empty dictionary
+        with open(disabled_servers_file, 'w') as file:
+            json.dump({}, file)
+        return {}
 
 
 # Function to Save disabled servers to file
-def save_disabled_server(xero_server):
-    with open(disabled_servers_file, 'a') as file:
-        file.write(f"{xero_server}\n")
+def save_disabled_server(xero_server, incident_number):
+    disabled_servers = load_disabled_servers()
+    disabled_servers[xero_server] = incident_number  # Add server and incident number to dictionary
+    with open(disabled_servers_file, 'w') as file:
+        json.dump(disabled_servers, file)  # Save as JSON
 
 
 # Function to check for disabled server from file
 def is_server_disabled(xero_server):
     disabled_servers = load_disabled_servers()
     return xero_server in disabled_servers
+
+
+# Function to remove server from disabled list
+def remove_disabled_server(xero_server):
+    disabled_servers = load_disabled_servers()
+    if xero_server in disabled_servers:
+        incident = disabled_servers[xero_server]  # Extract the incident number from the dictionary
+        subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
+        body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
+        send_email(smtp_recipients, subject, body, xero_server)
+        del disabled_servers[xero_server]  # Remove server from dictionary
+        with open(disabled_servers_file, 'w') as file:
+            json.dump(disabled_servers, file)  # Save as JSON
+
 
 
 # Function to encode an image as base64
@@ -331,38 +355,6 @@ def restart_xero_server(xero_server):
             xero_server_private_key,
             xero_restart_command,
         )
-    except paramiko.AuthenticationException as auth_error:
-        logging.error(f"Authentication failed while restarting Xero server ({xero_server}): {auth_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
-        incident_description = body
-        external_unique_id = str(uuid.uuid4())
-        incident_number = create_service_now_incident(
-            incident_summary, incident_description,
-            configuration_item, external_unique_id,
-            urgency, impact
-        )
-        if incident_number:
-            print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
-    except paramiko.SSHException as ssh_error:
-        logging.error(f"SSH connection error while restarting Xero server ({xero_server}): {ssh_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
-        incident_description = body
-        external_unique_id = str(uuid.uuid4())
-        incident_number = create_service_now_incident(
-            incident_summary, incident_description,
-            configuration_item, external_unique_id,
-            urgency, impact
-        )
-        if incident_number:
-            print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        send_email(smtp_recipients, subject, body, xero_server)
     except Exception as e:
         logging.error(f"Error restarting Xero server ({xero_server}): {e}")
         subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
@@ -382,7 +374,7 @@ def restart_xero_server(xero_server):
     else:
         logging.info(f"Xero server restarted successfully: {result}")
 
-    return result
+    return None
 
 
 def disable_xero_server(xero_server):
@@ -394,48 +386,6 @@ def disable_xero_server(xero_server):
             xero_server_private_key,
             xero_disable_command,
         )
-    except paramiko.AuthenticationException as auth_error:
-        logging.error(f"Authentication failed while Disabling Xero server ({xero_server}): {auth_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
-        incident_description = body
-        external_unique_id = str(uuid.uuid4())
-        incident_number = create_service_now_incident(
-            incident_summary, incident_description,
-            configuration_item, external_unique_id,
-            urgency, impact
-        )
-        if incident_number:
-            print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        if use_memes:
-            generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
-            send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
-            os.remove(temp_meme_path)
-        else:
-            send_email(smtp_recipients, subject, body, xero_server)
-    except paramiko.SSHException as ssh_error:
-        logging.error(f"SSH connection error while Disabling Xero server ({xero_server}): {ssh_error}")
-        subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
-        body = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)/nPlease investigate"
-        incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server)"
-        incident_description = body
-        external_unique_id = str(uuid.uuid4())
-        incident_number = create_service_now_incident(
-            incident_summary, incident_description,
-            configuration_item, external_unique_id,
-            urgency, impact
-        )
-        if incident_number:
-            print(incident_number)
-            subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
-        if use_memes:
-            generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
-            send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
-            os.remove(temp_meme_path)
-        else:
-            send_email(smtp_recipients, subject, body, xero_server)
     except Exception as e:
         logging.error(f"Error Disabling Xero server ({xero_server}): {e}")
         subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
@@ -451,6 +401,9 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
+            save_disabled_server(xero_server, incident_number)
+        else:
+            save_disabled_server(xero_server, "Ticket Creation Failed")
         if use_memes:
             generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
             send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
@@ -472,13 +425,16 @@ def disable_xero_server(xero_server):
         if incident_number:
             print(incident_number)
             subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str} {incident_number}"
+            save_disabled_server(xero_server,incident_number)
+        else:
+            save_disabled_server(xero_server, "Ticket Creation Failed")
         if use_memes:
             generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
             send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
             os.remove(temp_meme_path)
         else:
             send_email(smtp_recipients, subject, body, xero_server)
-    return result  # Return the result or another suitable value
+    return None  # Return the result or another suitable value
 
 
 def execute_remote_command(hostname, username, private_key_path, command):
@@ -499,52 +455,55 @@ def execute_remote_command(hostname, username, private_key_path, command):
         print(f"Error executing remote command: {e}")
         return None
 
-
-for node in xero_nodes:
-    # Skip testing if the server is already disabled
-    if is_server_disabled(node):
-        print(f"Skipping {node} - Server is already disabled.")
-        continue
-
-    local_time_str = datetime.now().time()
-    xero_ticket = get_xero_ticket(node)
-
-    if xero_ticket:
-        verification_status = verify_ticket(node, xero_ticket)
-
-    else:
-        print(f"Ticket Creation failed for {node}")
-        restart_xero_server(node)
-        print("Restart Completed, waiting 10 seconds to retest")
-        sleep(10)
+def main():
+    for node in xero_nodes:
         xero_ticket = get_xero_ticket(node)
 
         if xero_ticket:
             verification_status = verify_ticket(node, xero_ticket)
-
-            if verification_status:
-                subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
-                send_email(smtp_recipients, subject, body, node)
+            if is_server_disabled(node):
+                print(f"Xero services restored on {node}, removing from Disabled Servers File")
+                remove_disabled_server(node)
+                continue
         else:
-            if xero_wado:
-                wado_cache = clear_wado_cache(node)
+            if is_server_disabled(node):
+                print(f"Skipping {node} - Server is already disabled.")
+                continue
 
-                if wado_cache:
-                    print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
-                    sleep(10)
-                    xero_ticket = get_xero_ticket(node)
+            print(f"Ticket Creation failed for {node}")
+            restart_xero_server(node)
+            print("Restart Completed, waiting 10 seconds to retest")
+            sleep(10)
+            xero_ticket = get_xero_ticket(node)
 
-                    if xero_ticket:
-                        verification_status = verify_ticket(node, xero_ticket)
+            if xero_ticket:
+                verification_status = verify_ticket(node, xero_ticket)
 
-                        if verification_status:
-                            subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                            body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
-                            send_email(smtp_recipients, subject, body, node)
+                if verification_status:
+                    subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                    body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                    send_email(smtp_recipients, subject, body, node)
+            else:
+                if xero_wado:
+                    wado_cache = clear_wado_cache(node)
+
+                    if wado_cache:
+                        print("Cluster Wado Cache Cleared, waiting 10 seconds to retest")
+                        sleep(10)
+                        xero_ticket = get_xero_ticket(node)
+
+                        if xero_ticket:
+                            verification_status = verify_ticket(node, xero_ticket)
+
+                            if verification_status:
+                                subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
+                                body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str} (Cluster Wado Cache Cleared)"
+                                send_email(smtp_recipients, subject, body, node)
+                    else:
+                        disable_xero_server(node)
                 else:
                     disable_xero_server(node)
-                    save_disabled_server(node)  # Save the disabled server to the file
-            else:
-                disable_xero_server(node)
-                save_disabled_server(node)  # Save the disabled server to the file
+
+
+if __name__ == '__main__':
+    main()
