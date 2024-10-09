@@ -160,8 +160,8 @@ def remove_disabled_server(xero_server):
     disabled_servers = load_disabled_servers()
     if xero_server in disabled_servers:
         incident = disabled_servers[xero_server]  # Extract the incident number from the dictionary
-        subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
+        subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+        body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
         send_email(smtp_recipients, subject, body, xero_server)
         del disabled_servers[xero_server]  # Remove server from dictionary
         with open(disabled_servers_file, 'w') as file:
@@ -304,14 +304,14 @@ def verify_ticket(xero_server, xero_ticket):
 
         response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
-        print(f"Verification URL Response Status Code: {response.status_code}")
+        print(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
         # print(f"Verification URL Response Content: {response.text}")
 
         if response.status_code == 200:
-            print("Ticket verification successful")
+            print(f"{xero_server} Ticket verification successful")
             return True
         else:
-            print("Ticket verification failed")
+            print(f"{xero_server} Ticket verification failed")
             return False
 
     except requests.exceptions.RequestException as e:
