@@ -22,6 +22,7 @@ Before running the script, ensure the following:
 The script uses a configuration file named `xeroticket.ini` to store various parameters. Ensure that this file is present in the same directory as the script. Example configuration parameters include:
 
 - Xero API Variables
+- EI Cluster DB Variables
 - Email Variables
 - ServiceNow Variables
 
@@ -49,6 +50,7 @@ The script performs the following actions:
 
 5. **Disabled Server Awareness**: In the event a server is disabled by the script, it will be stored in the disabled_servers.txt file, after the server issues have been resolved, it will automatically removed from this file.
 
+6. **Active Upgrade Awareness**: In the event the cluster is in a PREPARE status, the restart logic will be ignored, and an email notification will be sent if there is a failure, once the failed server passes valication, it will be removed from the disabled servers list and notification sent.
 
 ## Script Logic
 
