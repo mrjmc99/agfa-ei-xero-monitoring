@@ -176,8 +176,12 @@ def remove_disabled_server(xero_server):
     disabled_servers = load_disabled_servers()
     if xero_server in disabled_servers:
         incident = disabled_servers[xero_server]  # Extract the incident number from the dictionary
-        subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
+        if incident == 'PREPARE':
+            subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+            body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+        else:
+            subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+            body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
         send_email(smtp_recipients, subject, body, xero_server)
         del disabled_servers[xero_server]  # Remove server from dictionary
         with open(disabled_servers_file, 'w') as file:
@@ -403,8 +407,6 @@ def clear_wado_cache(xero_server):
     return None
 
 
-
-
 #  check for upgrade pending/inprogress
 def check_for_upgrade(xero_server):
     # Oracle database connection details
@@ -427,8 +429,9 @@ def check_for_upgrade(xero_server):
 
     try:
         cursor = connection.cursor()
-        cursor.execute(query, xero_node=f"{xero_server}%")
+        cursor.execute(query, xero_server=f"{xero_server}%")
         result = cursor.fetchone()
+        print(f"upgrade check for {xero_server} result is:{result}")
         return result is not None
     except cx_Oracle.DatabaseError as e:
         print(f"Database error occurred: {e}")
@@ -593,9 +596,16 @@ def wado_clear_and_retest(xero_server):
         disable_xero_server(xero_server)
     return
 
+def notify_failed_server_pending_upgrade(xero_server):
+    subject = f"Xero Ticketing/Image Display Failing on {xero_server} at {local_time_str} (Server in PREPARE Status)"
+    body = f"Xero Ticketing/Image Display Failing on {xero_server} at {local_time_str} (Server in PREPARE Status)\n The server will has been placed on the disabled servers lists, and will be removed automacailly after the upgrade is complete and ticketing is validated."
+    send_email(smtp_recipients, subject, body, xero_server)
+    save_disabled_server(xero_server, "PREPARE")
+    return
+
 def process_node(node):
     xero_ticket = get_xero_ticket(node)
-
+    server_in_prepare_status = check_for_upgrade(node)
     if xero_ticket:
         test_xero(node,xero_ticket)
         if test_xero:
@@ -606,14 +616,27 @@ def process_node(node):
                 return
             else:
                 if xero_wado:
-                    wado_clear_and_retest(node)
+                    if server_in_prepare_status:
+                        notify_failed_server_pending_upgrade(node)
+                        return
+                    else:
+                        wado_clear_and_retest(node)
                 else:
-                    disable_xero_server(node)
+                    if server_in_prepare_status:
+                        notify_failed_server_pending_upgrade(node)
+                        return
+                    else:
+                        disable_xero_server(node)
     else:
         if is_server_disabled(node):
             print(f"Skipping {node} - Server is already disabled.")
             return
         print(f"Ticket Creation failed for {node}")
+        print (f"check for upgrade:{server_in_prepare_status}")
+        if server_in_prepare_status:
+            print(f"Skipping {node} - Server is in a PREPARE Status")
+            notify_failed_server_pending_upgrade(node)
+            return
         restart_xero_server(node)
         print("Restart Completed, waiting 10 seconds to retest")
         sleep(10)
@@ -628,7 +651,6 @@ def process_node(node):
                     wado_clear_and_retest(node)
                 else:
                     disable_xero_server(node)
-                    return
         else:
             print(f"Ticket Creation failed for {node} Disabling Server")
             disable_xero_server(node)
