@@ -17,6 +17,7 @@ validation_study_AccessionNumber =
 theme =
 cluster_db_host =
 cluster_db_port =
+cluster_db_service_name =
 cluster_db_user =
 cluster_db_password =
 

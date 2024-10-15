@@ -54,6 +54,7 @@ xero_theme = config.get("Xero", "theme")
 disabled_servers_file = os.path.join(script_dir, config.get("Xero", "disabled_servers_file"))
 cluster_db_host = config.get("Xero", "cluster_db_host")
 cluster_db_port = config.get("Xero", "cluster_db_port")
+cluster_db_service_name = config.get("Xero", "cluster_db_service_name")
 cluster_db_user = config.get("Xero", "cluster_db_user")
 cluster_db_password = config.get("Xero", "cluster_db_password")
 
@@ -407,7 +408,7 @@ def clear_wado_cache(xero_server):
 #  check for upgrade pending/inprogress
 def check_for_upgrade(xero_server):
     # Oracle database connection details
-    dsn = cx_Oracle.makedsn(cluster_db_host, cluster_db_port, service_name="your_service_name")
+    dsn = cx_Oracle.makedsn(cluster_db_host, cluster_db_port, service_name=cluster_db_service_name)
     connection = cx_Oracle.connect(user=cluster_db_user, password=cluster_db_password, dsn=dsn)
 
     query = """
@@ -435,6 +436,7 @@ def check_for_upgrade(xero_server):
     finally:
         cursor.close()
         connection.close()
+
 
 def restart_xero_server(xero_server):
     try:
