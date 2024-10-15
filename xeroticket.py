@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import concurrent.futures
+import cx_Oracle
 
 # Set up logging
 logging.basicConfig(
@@ -51,6 +52,11 @@ validation_study_PatientID = config.get("Xero", "validation_study_PatientID")
 validation_study_AccessionNumber = config.get("Xero", "validation_study_AccessionNumber")
 xero_theme = config.get("Xero", "theme")
 disabled_servers_file = os.path.join(script_dir, config.get("Xero", "disabled_servers_file"))
+cluster_db_host = config.get("Xero", "cluster_db_host")
+cluster_db_port = config.get("Xero", "cluster_db_port")
+cluster_db_user = config.get("Xero", "cluster_db_user")
+cluster_db_password = config.get("Xero", "cluster_db_password")
+
 
 query_constraints = f"PatientID={validation_study_PatientID}, AccessionNumber={validation_study_AccessionNumber}"
 display_vars = f"theme={xero_theme}, PatientID={validation_study_PatientID}, AccessionNumber={validation_study_AccessionNumber}"
@@ -395,6 +401,40 @@ def clear_wado_cache(xero_server):
 
     return None
 
+
+
+
+#  check for upgrade pending/inprogress
+def check_for_upgrade(xero_server):
+    # Oracle database connection details
+    dsn = cx_Oracle.makedsn(cluster_db_host, cluster_db_port, service_name="your_service_name")
+    connection = cx_Oracle.connect(user=cluster_db_user, password=cluster_db_password, dsn=dsn)
+
+    query = """
+    select t.installstage "Installation Stage", inode.id "Cluster node"
+    from installer_node inode,
+    xmltable('/installStatus' 
+        passing xmltype(inode.status) 
+        columns 
+            installstage varchar2(64) path 'stage',
+            uninstalled varchar2(64) path 'uninstall'
+        ) t
+    where upper(inode.id) like upper(:xero_server)
+    and uninstalled = 'false'
+    and installstage = 'PREPARE'
+    """
+
+    try:
+        cursor = connection.cursor()
+        cursor.execute(query, xero_node=f"{xero_server}%")
+        result = cursor.fetchone()
+        return result is not None
+    except cx_Oracle.DatabaseError as e:
+        print(f"Database error occurred: {e}")
+        return False
+    finally:
+        cursor.close()
+        connection.close()
 
 def restart_xero_server(xero_server):
     try:
