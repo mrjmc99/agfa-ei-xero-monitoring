@@ -313,7 +313,7 @@ def get_xero_ticket(xero_server):
 
     try:
         print(f"Testing Ticket Creation for {xero_server}")
-        response = requests.post(api_url, headers=headers, data=payload, verify=False)
+        response = requests.post(api_url, headers=headers, data=payload, verify=False, timeout=xero_get_ticket_timeout)
         print(f"{xero_server} Ticket Creation Response Status Code:",
               response.status_code)  # Print status code for debugging
         if response.status_code == 200:
@@ -706,7 +706,7 @@ def process_node(node):
 def main():
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_node, xero_nodes)
-
+    print("All tasks completed. Shutting down.")
 
 if __name__ == '__main__':
     main()
