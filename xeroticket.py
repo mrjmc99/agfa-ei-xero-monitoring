@@ -662,24 +662,17 @@ def process_node(node):
                 print(f"Skipping {node} - Server is already disabled.")
                 return
             else:
-                if xero_wado:
-                    if server_in_prepare_status:
-                        notify_failed_server_pending_upgrade(node)
-                        return
-                    else:
-                        local_wado_purge_and_retest(node)
+                if server_in_prepare_status:
+                    notify_failed_server_pending_upgrade(node)
+                    return
                 else:
-                    if server_in_prepare_status:
-                        notify_failed_server_pending_upgrade(node)
-                        return
-                    else:
-                        disable_xero_server(node)
+                    local_wado_purge_and_retest(node)
     else:
         if is_server_disabled(node):
             print(f"Skipping {node} - Server is already disabled.")
             return
         print(f"Ticket Creation failed for {node}")
-        print (f"check for upgrade:{server_in_prepare_status}")
+        print(f"check for upgrade:{server_in_prepare_status}")
         if server_in_prepare_status:
             print(f"Skipping {node} - Server is in a PREPARE Status")
             notify_failed_server_pending_upgrade(node)
@@ -694,10 +687,8 @@ def process_node(node):
             if verification_status:
                 return
             else:
-                if xero_wado:
-                    local_wado_purge_and_retest(node)
-                else:
-                    disable_xero_server(node)
+                local_wado_purge_and_retest(node)
+
         else:
             print(f"Ticket Creation failed for {node} Disabling Server")
             disable_xero_server(node)
