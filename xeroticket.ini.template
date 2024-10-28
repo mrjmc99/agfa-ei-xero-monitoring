@@ -6,6 +6,7 @@ xero_query_constraints =
 xero_nodes = 
 xero_restart_command = sudo /opt/agfa/CWP/active/tools/service/startup/./xero-restart -q
 xero_disable_command = sudo service agility-haproxy stop
+xero_wado_purge_command = sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +1440 -delete -print >> /var/log/xero/cacheBackupCleanup_`date +\%d-\%m-\%Y-\%T`.log
 xero_server_user = agfaservice
 xero_server_private_key = 
 xero_get_ticket_timeout = 5

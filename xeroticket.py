@@ -43,6 +43,7 @@ xero_query_constraints = config.get("Xero", "xero_query_constraints")
 xero_nodes = config.get("Xero", "xero_nodes").split(',')
 xero_restart_command = config.get("Xero", "xero_restart_command")
 xero_disable_command = config.get("Xero", "xero_disable_command")
+xero_wado_purge_command = config.get("Xero", "xero_wado_purge_command")
 xero_server_user = config.get("Xero", "xero_server_user")
 xero_server_private_key = config.get("Xero", "xero_server_private_key")
 xero_get_ticket_timeout = int(config.get("Xero", "xero_get_ticket_timeout"))
@@ -287,6 +288,7 @@ def create_service_now_incident(summary, description, configuration_item, extern
 
     return None
 
+
 def get_xero_ticket(xero_server):
     api_url = f"https://{xero_server}/encodedTicket"
 
@@ -472,6 +474,24 @@ def restart_xero_server(xero_server):
     return None
 
 
+def purge_local_wado_cache(xero_server):
+    try:
+        print("attempting to Purge Local Wado Cache")
+        result = execute_remote_command(
+            xero_server,
+            xero_server_user,
+            xero_server_private_key,
+            xero_wado_purge_command,
+        )
+    except Exception as e:
+        logging.error(f"Error Purging Local Wado Cache on Xero server ({xero_server}): {e}")
+
+    else:
+        logging.info(f"Xero server Wado Cache Purged successfully: {result}")
+
+    return True
+
+
 def disable_xero_server(xero_server):
     try:
         print("attempting to disable xero")
@@ -550,6 +570,7 @@ def execute_remote_command(hostname, username, private_key_path, command):
         print(f"Error executing remote command: {e}")
         return None
 
+
 def test_xero(xero_server,xero_ticket):
     verification_status = verify_ticket(xero_server, xero_ticket)
     if verification_status:
@@ -574,6 +595,7 @@ def test_xero(xero_server,xero_ticket):
             return True
         return False
 
+
 def wado_clear_and_retest(xero_server):
     wado_cache = clear_wado_cache(xero_server)
 
@@ -596,12 +618,37 @@ def wado_clear_and_retest(xero_server):
         disable_xero_server(xero_server)
     return
 
+
+def local_wado_purge_and_retest(xero_server):
+    wado_cache = purge_local_wado_cache(xero_server)
+
+    if wado_cache:
+        print("Local Wado Cache Cleared, waiting 10 seconds to retest")
+        sleep(10)
+        xero_ticket = get_xero_ticket(xero_server)
+
+        if xero_ticket:
+            verification_status = verify_ticket(xero_server, xero_ticket)
+
+            if verification_status:
+                subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str} (Local Wado Cache Cleared)"
+                body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str} (Local Wado Cache Cleared)"
+                send_email(smtp_recipients, subject, body, xero_server)
+            else:
+                disable_xero_server(xero_server)
+                return
+    else:
+        disable_xero_server(xero_server)
+    return
+
+
 def notify_failed_server_pending_upgrade(xero_server):
     subject = f"Xero Ticketing/Image Display Failing on {xero_server} at {local_time_str} (Server in PREPARE Status)"
     body = f"Xero Ticketing/Image Display Failing on {xero_server} at {local_time_str} (Server in PREPARE Status)\n The server will has been placed on the disabled servers lists, and will be removed automacailly after the upgrade is complete and ticketing is validated."
     send_email(smtp_recipients, subject, body, xero_server)
     save_disabled_server(xero_server, "PREPARE")
     return
+
 
 def process_node(node):
     xero_ticket = get_xero_ticket(node)
@@ -620,7 +667,7 @@ def process_node(node):
                         notify_failed_server_pending_upgrade(node)
                         return
                     else:
-                        wado_clear_and_retest(node)
+                        local_wado_purge_and_retest(node)
                 else:
                     if server_in_prepare_status:
                         notify_failed_server_pending_upgrade(node)
@@ -648,7 +695,7 @@ def process_node(node):
                 return
             else:
                 if xero_wado:
-                    wado_clear_and_retest(node)
+                    local_wado_purge_and_retest(node)
                 else:
                     disable_xero_server(node)
         else:
