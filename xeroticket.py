@@ -528,7 +528,7 @@ def disable_xero_server(xero_server):
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
         subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
+        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
         incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Server Disabled)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
