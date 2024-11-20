@@ -445,7 +445,7 @@ def check_for_upgrade(xero_server):
 
 def restart_xero_server(xero_server):
     try:
-        print("attempting to restart xero")
+        print(f"attempting to restart {xero_server}")
         result = execute_remote_command(
             xero_server,
             xero_server_user,
@@ -528,7 +528,7 @@ def disable_xero_server(xero_server):
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
         subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo manually purge cache run the following command: sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +1440 -delete \nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
+        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo manually purge cache run the following command: sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +240 -delete \nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
         incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Server Disabled)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
@@ -666,7 +666,23 @@ def process_node(node):
                     notify_failed_server_pending_upgrade(node)
                     return
                 else:
-                    local_wado_purge_and_retest(node)
+                    restart_xero_server(node)
+                    print("Restart Completed, waiting 10 seconds to retest")
+                    sleep(10)
+                    xero_ticket = get_xero_ticket(node)
+
+                    if xero_ticket:
+                        verification_status = verify_ticket(node, xero_ticket)
+                        if verification_status:
+                            return
+                        else:
+                            local_wado_purge_and_retest(node)
+
+                    else:
+                        print(f"Ticket Creation failed for {node} Disabling Server")
+                        disable_xero_server(node)
+
+
     else:
         if is_server_disabled(node):
             print(f"Skipping {node} - Server is already disabled.")
