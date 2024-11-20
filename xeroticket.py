@@ -46,6 +46,7 @@ xero_domain = config.get("Xero", "xero_domain")
 xero_query_constraints = config.get("Xero", "xero_query_constraints")
 xero_nodes = config.get("Xero", "xero_nodes").split(',')
 xero_restart_command = config.get("Xero", "xero_restart_command")
+xero_haproxy_restart_command = config.get("Xero", "xero_haproxy_restart_command")
 xero_disable_command = config.get("Xero", "xero_disable_command")
 xero_wado_purge_command = config.get("Xero", "xero_wado_purge_command")
 xero_server_user = config.get("Xero", "xero_server_user")
@@ -318,8 +319,8 @@ def get_xero_ticket(xero_server):
     try:
         print(f"Testing Ticket Creation for {xero_server}")
         response = requests.post(api_url, headers=headers, data=payload, verify=False, timeout=xero_get_ticket_timeout)
-        print(f"{xero_server} Ticket Creation Response Status Code:",
-              response.status_code)  # Print status code for debugging
+        #print(f"{xero_server} Ticket Creation Response Status Code:",
+              #response.status_code)  # Print status code for debugging
         if response.status_code == 200:
             print(f"{xero_server} created a ticket successfully")
             #print(response.text)
@@ -370,7 +371,7 @@ def verify_ticket(xero_server, xero_ticket):
         #print(xero_ticket)
         response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
-        print(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
+        #print(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
         # print(f"Verification URL Response Content: {response.text}")
 
         if response.status_code == 200:
@@ -449,13 +450,21 @@ def check_for_upgrade(xero_server):
 
 def restart_xero_server(xero_server):
     try:
-        print(f"attempting to restart {xero_server}")
-        result = execute_remote_command(
+        print(f"attempting to restart haproxy on {xero_server}")
+        haproxy_result = execute_remote_command(
+            xero_server,
+            xero_server_user,
+            xero_server_private_key,
+            xero_haproxy_restart_command,
+        )
+        print(f"attempting to restart jboss on {xero_server}")
+        jboss_result = execute_remote_command(
             xero_server,
             xero_server_user,
             xero_server_private_key,
             xero_restart_command,
         )
+
     except Exception as e:
         logging.error(f"Error restarting Xero server ({xero_server}): {e}")
         subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) (Ticket Creation Failure))"
@@ -473,7 +482,8 @@ def restart_xero_server(xero_server):
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
         send_email(smtp_recipients, subject, body, xero_server)
     else:
-        logging.info(f"Xero server restarted successfully: {result}")
+        #logging.info(f"Xero server restarted successfully: {haproxy_result}")
+        logging.info(f"Xero server restarted successfully: {haproxy_result} {jboss_result}")
 
     return None
 
@@ -532,7 +542,8 @@ def disable_xero_server(xero_server):
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
         subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo manually purge cache run the following command: sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +240 -delete \nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
+        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}To enable the server run the following command on the xero server: sudo agility-haproxy restart"
+        #body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo manually purge cache run the following command: sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +240 -delete \nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
         incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Server Disabled)"
         incident_description = body
         external_unique_id = str(uuid.uuid4())
@@ -591,8 +602,9 @@ def test_xero(xero_server,xero_ticket):
         restart_xero_server(xero_server)
         print("Restart Completed, waiting 10 seconds to retest")
         sleep(10)
-        verification_status = verify_ticket(xero_server, xero_ticket)
-        if verification_status:
+        retry_verification_status = verify_ticket(xero_server, xero_ticket)
+        print(f"reverification status: {retry_verification_status}")
+        if retry_verification_status:
             subject = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
             body = f"Xero Ticketing/Image Display has been restored on {xero_server} at {local_time_str}"
             send_email(smtp_recipients, subject, body, xero_server)
@@ -670,23 +682,12 @@ def process_node(node):
                     notify_failed_server_pending_upgrade(node)
                     return
                 else:
-                    restart_xero_server(node)
-                    print("Restart Completed, waiting 10 seconds to retest")
-                    sleep(10)
-                    xero_ticket = get_xero_ticket(node)
-
-                    if xero_ticket:
-                        verification_status = verify_ticket(node, xero_ticket)
-                        if verification_status:
-                            return
-                        else:
-                            local_wado_purge_and_retest(node)
-
+                    test_xero(node, xero_ticket)
+                    if test_xero:
+                        return
                     else:
                         print(f"Ticket Creation failed for {node} Disabling Server")
                         disable_xero_server(node)
-
-
     else:
         if is_server_disabled(node):
             print(f"Skipping {node} - Server is already disabled.")
@@ -703,12 +704,14 @@ def process_node(node):
         xero_ticket = get_xero_ticket(node)
 
         if xero_ticket:
-            verification_status = verify_ticket(node, xero_ticket)
-            if verification_status:
+            test_xero(node, xero_ticket)
+            if test_xero:
+                subject = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                body = f"Xero Ticketing/Image Display has been restored on {node} at {local_time_str}"
+                send_email(smtp_recipients, subject, body, node)
                 return
-            else:
-                local_wado_purge_and_retest(node)
-
+            print(f"Ticket Creation failed for {node} Disabling Server")
+            disable_xero_server(node)
         else:
             print(f"Ticket Creation failed for {node} Disabling Server")
             disable_xero_server(node)
