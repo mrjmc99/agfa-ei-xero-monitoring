@@ -17,6 +17,10 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import concurrent.futures
 import cx_Oracle
+import urllib3
+
+# ignore insecure warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Set up logging
 logging.basicConfig(
@@ -362,7 +366,7 @@ def verify_ticket(xero_server, xero_ticket):
         # Append the ticket as a query parameter to the verification URL
         #verification_url = f"https://{xero_server}/?ticket={xero_ticket}"
         verification_url = f"https://{xero_server}/?PatientID={validation_study_PatientID}&AccessionNumber={validation_study_AccessionNumber}&theme={xero_theme}&ticket={xero_ticket}"
-        print(verification_url)
+        #print(verification_url)
         #print(xero_ticket)
         response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
