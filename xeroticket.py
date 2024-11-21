@@ -24,9 +24,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Set up logging
 logging.basicConfig(
-    filename='xero_ticket.log',
-    level=logging.ERROR,
+    level=logging.INFO,
     format='%(asctime)s [%(levelname)s]: %(message)s',
+    handlers=[
+        logging.FileHandler("xero_ticket.log"),
+        logging.StreamHandler()
+    ]
 )
 
 # Get the absolute path of the script
@@ -221,9 +224,9 @@ def send_email(smtp_recipients, subject, body, node, meme_path=None):
         server = smtplib.SMTP(smtp_server, smtp_port)
         server.sendmail(smtp_from, smtp_recipients, msg.as_string())
         server.quit()
-        print(f"Email sent to {', '.join(smtp_recipients)}")
+        logging.info(f"Email sent to {', '.join(smtp_recipients)}")
     except Exception as e:
-        print(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
+        logging.error(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
 
 
 def create_and_send_failure_incident(xero_server, failure_reason):
@@ -265,7 +268,7 @@ def create_service_now_incident(summary, description, configuration_item, extern
     }
 
     try:
-        # print("Incident Creation Payload:", payload)  # Print payload for debugging
+        # logging.info("Incident Creation Payload:", payload)  # Print payload for debugging
         response = requests.post(
             incident_api_url,
             headers=headers,
@@ -273,19 +276,19 @@ def create_service_now_incident(summary, description, configuration_item, extern
             json=payload,
         )
 
-        # print("Incident Creation Response Status Code:", response.status_code)  # Print status code for debugging
-        # print("Incident Creation Response Content:", response.text)  # Print response content for debugging
+        # logging.info("Incident Creation Response Status Code:", response.status_code)  # Print status code for debugging
+        # logging.info("Incident Creation Response Content:", response.text)  # Print response content for debugging
 
         if response.status_code == 201:
             incident_number = response.json().get("result", {}).get("u_task_string")
             sys_id = response.json().get('result', {}).get('u_task', {}).get('value')
-            print(f"ServiceNow incident created successfully: {incident_number}")
+            logging.info(f"ServiceNow incident created successfully: {incident_number}")
             return incident_number
         else:
-            print(f"Failed to create ServiceNow incident. Response: {response.text}")
+            logging.info(f"Failed to create ServiceNow incident. Response: {response.text}")
 
     except requests.exceptions.RequestException as e:
-        print(f"An error occurred while creating ServiceNow incident: {e}")
+        logging.error(f"An error occurred while creating ServiceNow incident: {e}")
 
     return None
 
@@ -296,8 +299,8 @@ def get_xero_ticket(xero_server):
     # URL encode the query constraints and display vars
     query_constraints_encoded = urllib.parse.quote(query_constraints)
     display_vars_encoded = urllib.parse.quote(display_vars)
-    #print(query_constraints_encoded)
-    #print(display_vars_encoded)
+    #logging.info(query_constraints_encoded)
+    #logging.info(display_vars_encoded)
     payload = {
         "user": xero_user,
         "password": xero_password,
@@ -313,20 +316,20 @@ def get_xero_ticket(xero_server):
     headers = {}
 
     try:
-        print(f"Testing Ticket Creation for {xero_server}")
+        logging.info(f"Testing Ticket Creation for {xero_server}")
         response = requests.post(api_url, headers=headers, data=payload, verify=False, timeout=xero_get_ticket_timeout)
-        #print(f"{xero_server} Ticket Creation Response Status Code:",
+        #logging.info(f"{xero_server} Ticket Creation Response Status Code:",
               #response.status_code)  # Print status code for debugging
         if response.status_code == 200:
-            print(f"{xero_server} created a ticket successfully")
-            #print(response.text)
+            logging.info(f"{xero_server} created a ticket successfully")
+            #logging.info(response.text)
             return response.text
         else:
-            print(f"{xero_server} Ticket Creation Failure")
+            logging.info(f"{xero_server} Ticket Creation Failure")
             return None
 
     except requests.exceptions.RequestException as e:
-        print(f"An error occurred while attempting to create xero tickets on {xero_server}: {e}")
+        logging.error(f"An error occurred while attempting to create xero tickets on {xero_server}: {e}")
         return None
 
 
@@ -335,22 +338,22 @@ def verify_ticket(xero_server, xero_ticket):
         # Append the ticket as a query parameter to the verification URL
         #verification_url = f"https://{xero_server}/?ticket={xero_ticket}"
         verification_url = f"https://{xero_server}/?PatientID={validation_study_PatientID}&AccessionNumber={validation_study_AccessionNumber}&theme={xero_theme}&ticket={xero_ticket}"
-        #print(verification_url)
-        #print(xero_ticket)
+        #logging.info(verification_url)
+        #logging.info(xero_ticket)
         response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
 
-        #print(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
-        # print(f"Verification URL Response Content: {response.text}")
+        #logging.info(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
+        # logging.info(f"Verification URL Response Content: {response.text}")
 
         if response.status_code == 200:
-            print(f"{xero_server} Ticket verification successful")
+            logging.info(f"{xero_server} Ticket verification successful")
             return True
         else:
-            print(f"{xero_server} Ticket verification failed")
+            logging.info(f"{xero_server} Ticket verification failed")
             return False
 
     except requests.exceptions.RequestException as e:
-        print(f"An error occurred while attempting to verify the ticket: {e}")
+        logging.error(f"An error occurred while attempting to verify the ticket: {e}")
         return False
 
 
@@ -388,10 +391,10 @@ def check_for_upgrade(xero_server):
         cursor = connection.cursor()
         cursor.execute(query, xero_server=f"{xero_server}%")
         result = cursor.fetchone()
-        print(f"upgrade check for {xero_server} result is:{result}")
+        logging.info(f"upgrade check for {xero_server} result is:{result}")
         return result is not None
     except cx_Oracle.DatabaseError as e:
-        print(f"Database error occurred: {e}")
+        logging.error(f"Database error occurred: {e}")
         return False
     finally:
         cursor.close()
@@ -405,7 +408,7 @@ def restart_xero_services(xero_server):
             (xero_restart_command, "JBoss")
         ]
         for command, service_name in commands:
-            print(f"Attempting to restart {service_name} on {xero_server}")
+            logging.info(f"Attempting to restart {service_name} on {xero_server}")
             result = execute_remote_command(
                 xero_server, xero_server_user, xero_server_private_key, command
             )
@@ -418,7 +421,7 @@ def restart_xero_services(xero_server):
 
 def disable_xero_server(xero_server):
     try:
-        print(f"attempting to disable xero services on {xero_server}")
+        logging.info(f"attempting to disable xero services on {xero_server}")
         result = execute_remote_command(
             xero_server,
             xero_server_user,
@@ -438,7 +441,7 @@ def disable_xero_server(xero_server):
             urgency, impact
         )
         if incident_number:
-            print(incident_number)
+            logging.info(incident_number)
             subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Unable to connect to server) {incident_number}"
             DisabledServerManager.save_disabled_server(xero_server, incident_number)
         else:
@@ -463,7 +466,7 @@ def disable_xero_server(xero_server):
             urgency, impact
         )
         if incident_number:
-            print(incident_number)
+            logging.info(incident_number)
             subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str} {incident_number}"
             DisabledServerManager.save_disabled_server(xero_server,incident_number)
         else:
@@ -492,7 +495,7 @@ def execute_remote_command(hostname, username, private_key_path, command):
         ssh.close()
         return result
     except Exception as e:
-        print(f"Error executing remote command: {e}")
+        logging.error(f"Error executing remote command: {e}")
         return None
 
 
@@ -507,23 +510,23 @@ def notify_failed_server_pending_upgrade(xero_server):
 def process_node(node):
     if get_and_verify_ticket(node):
         return
-    print(f"Ticket Creation failed for {node}")
+    logging.info(f"Ticket Creation failed for {node}")
     if DisabledServerManager.is_server_disabled(node):
-        print(f"Skipping {node} - Server is already disabled.")
+        logging.info(f"Skipping {node} - Server is already disabled.")
         return
 
 
     server_in_prepare_status = check_for_upgrade(node)
     if server_in_prepare_status:
-        print(f"Skipping {node} - Server is in a PREPARE Status")
+        logging.info(f"Skipping {node} - Server is in a PREPARE Status")
         notify_failed_server_pending_upgrade(node)
         return
 
     restart_xero_services(node)
     sleep(10)  # Wait and retry
-    print("Restart Completed, waiting 10 seconds to retest")
+    logging.info("Restart Completed, waiting 10 seconds to retest")
     if not get_and_verify_ticket(node):
-        print(f"Ticket Creation failed for {node} Disabling Server")
+        logging.info(f"Ticket Creation failed for {node} Disabling Server")
         disable_xero_server(node)
     else:
         subject = f"Xero Ticketing/Image Display has been Restored on {node} at {local_time_str}"
@@ -536,7 +539,7 @@ def process_node(node):
 def main():
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_node, xero_nodes)
-    print("All tasks completed. Shutting down.")
+    logging.info("All tasks completed. Shutting down.")
 
 if __name__ == '__main__':
     main()
