@@ -84,7 +84,7 @@ smtp_recipients_string = config.get("Email", "smtp_recipients")
 smtp_recipients = smtp_recipients_string.split(",")
 
 # meme variables
-use_memes = ast.literal_eval(config.get("Meme", "use_memes"))
+use_memes = config.getboolean("Meme", "use_memes")
 successful_restart_meme_path = os.path.join(script_dir, 'memes', config.get("Meme", "successful_restart_meme"))
 unsuccessful_restart_meme_path = os.path.join(script_dir, 'memes', config.get("Meme", "unsuccessful_restart_meme"))
 temp_meme_path = os.path.join(script_dir, os.path.dirname('memes'), 'temp_meme.jpg')
@@ -129,48 +129,55 @@ local_time_str = datetime.now().time()
 
 # Function to generate meme with better text size and positioning
 def generate_meme(image_path, top_text, bottom_text, output_path):
-    # Open the image
-    img = Image.open(image_path)
-    draw = ImageDraw.Draw(img)
+    logging.info("Generating meme...")
+    try:
+        # Open the image
+        img = Image.open(image_path)
+        draw = ImageDraw.Draw(img)
 
-    # Load the TrueType font
-    max_width = img.width * 0.9  # Allow a 5% margin on either side
-    max_font_size = img.height // 10  # Set a maximum font size based on image height
+        # Load the TrueType font
+        max_width = img.width * 0.9  # Allow a 5% margin on either side
+        max_font_size = img.height // 10  # Set a maximum font size based on image height
 
-    font_size = max_font_size
-    font = ImageFont.truetype(font_path, font_size)
+        font_size = max_font_size
+        font = ImageFont.truetype(font_path, font_size)
 
-    # Reduce font size until text fits within max_width
-    def fit_text_to_width(text, font):
-        while draw.textbbox((0, 0), text, font=font)[2] > max_width and font_size > 10:
-            font = ImageFont.truetype(font_path, font.size - 2)
-        return font
+        # Reduce font size until text fits within max_width
+        def fit_text_to_width(text, font):
+            while draw.textbbox((0, 0), text, font=font)[2] > max_width and font_size > 10:
+                font = ImageFont.truetype(font_path, font.size - 2)
+            return font
 
-    # Adjust top text font
-    font = fit_text_to_width(top_text, font)
-    wrapped_top_text = textwrap.fill(top_text, width=40)
+        # Adjust top text font
+        font = fit_text_to_width(top_text, font)
+        wrapped_top_text = textwrap.fill(top_text, width=40)
 
-    # Draw top text
-    top_y_position = 10
-    draw.multiline_text(
-        ((img.width - draw.textbbox((0, 0), wrapped_top_text, font=font)[2]) / 2, top_y_position),
-        wrapped_top_text, fill="white", font=font, align="center"
-    )
+        # Draw top text
+        top_y_position = 10
+        draw.multiline_text(
+            ((img.width - draw.textbbox((0, 0), wrapped_top_text, font=font)[2]) / 2, top_y_position),
+            wrapped_top_text, fill="white", font=font, align="center"
+        )
 
-    # Adjust bottom text font
-    font = fit_text_to_width(bottom_text, font)
-    wrapped_bottom_text = textwrap.fill(bottom_text, width=40)
+        # Adjust bottom text font
+        font = fit_text_to_width(bottom_text, font)
+        wrapped_bottom_text = textwrap.fill(bottom_text, width=40)
 
-    # Draw bottom text at the bottom with a bit of padding
-    bottom_y_position = img.height - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[3] - 20
-    draw.multiline_text(
-        ((img.width - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[2]) / 2, bottom_y_position),
-        wrapped_bottom_text, fill="white", font=font, align="center"
-    )
+        # Draw bottom text at the bottom with a bit of padding
+        bottom_y_position = img.height - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[3] - 20
+        draw.multiline_text(
+            ((img.width - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[2]) / 2, bottom_y_position),
+            wrapped_bottom_text, fill="white", font=font, align="center"
+        )
 
-    # Save the meme
-    img.save(output_path)
-    return output_path
+        # Save the meme
+        img.save(output_path)
+        logging.info(f"Meme saved at {output_path}")
+        return output_path
+
+    except Exception as e:
+        logging.error(f"Failed to generate meme: {e}")
+        raise
 
 
 
@@ -216,7 +223,13 @@ class DisabledServerManager:
             else:
                 subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
                 body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}\nPlease Close {incident}"
-            send_email(smtp_recipients, subject, body, xero_server)
+            if use_memes:
+                generate_meme(successful_restart_meme_path, f"Xero Ticketing/Image Display has been Restored on {xero_server}",
+                              "", temp_meme_path)
+                send_email(smtp_recipients, subject, body, xero_server, temp_meme_path)
+                os.remove(temp_meme_path)
+            else:
+                send_email(smtp_recipients, subject, body, xero_server)
             del servers[xero_server]
             DisabledServerManager.save_disabled_servers(servers)
 
@@ -241,8 +254,44 @@ def send_email(smtp_recipients, subject, body, node, meme_path=None):
     except Exception as e:
         logging.error(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
 
-# Helper function to construct email message
+
+
+# Helper function to construct email message with an embedded image
 def construct_email_message(smtp_from, smtp_recipients, subject, body, meme_path=None):
+    # Create a MIMEMultipart message to handle both HTML and image content
+    msg = MIMEMultipart('related')
+    msg["From"] = smtp_from
+    msg["To"] = ", ".join(smtp_recipients)
+    msg["Subject"] = subject
+
+    # Create the HTML body, embedding the image with a CID
+    body_html = body.replace("\n", "<br>")
+    html_body = f"""
+    <html>
+        <body>
+            <p>{body_html}</p>
+            {"<img src='cid:meme_image' alt='Meme'>" if meme_path else ""}
+        </body>
+    </html>
+    """
+    # Attach the HTML body to the email
+    msg.attach(MIMEText(html_body, 'html'))
+
+    # Attach the image if the meme_path is provided
+    if meme_path:
+        with open(meme_path, 'rb') as img_file:
+            meme_data = img_file.read()
+            image_part = MIMEImage(meme_data)
+            image_part.add_header('Content-ID', '<meme_image>')
+            image_part.add_header('Content-Disposition', 'inline', filename='meme.jpg')
+            msg.attach(image_part)
+
+    return msg
+
+
+
+# Helper function to construct email message
+def construct_email_message_old(smtp_from, smtp_recipients, subject, body, meme_path=None):
     msg = MIMEMultipart() if meme_path else MIMEText(body)
     msg["From"] = smtp_from
     msg["To"] = ", ".join(smtp_recipients)
@@ -478,8 +527,8 @@ def disable_xero_server(xero_server):
         else:
             DisabledServerManager.save_disabled_server(xero_server, "Ticket Creation Failed")
         if use_memes:
-            generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
-            DisabledServerManager.send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
+            generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"DISABLE XERO SERVICES ON {xero_server}", temp_meme_path)
+            send_email(smtp_recipients, subject, body, xero_server, temp_meme_path)
             os.remove(temp_meme_path)
         else:
             send_email(smtp_recipients, subject, body, xero_server)
@@ -504,7 +553,7 @@ def disable_xero_server(xero_server):
             DisabledServerManager.save_disabled_server(xero_server, "Ticket Creation Failed")
         if use_memes:
             generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY",f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
-            DisabledServerManager.send_email_meme(smtp_recipients, subject, body, xero_server, temp_meme_path)
+            send_email(smtp_recipients, subject, body, xero_server, temp_meme_path)
             os.remove(temp_meme_path)
         else:
             send_email(smtp_recipients, subject, body, xero_server)
@@ -562,7 +611,14 @@ def process_node(node):
     else:
         subject = f"Xero Ticketing/Image Display has been Restored on {node} at {local_time_str}"
         body = f"Xero Ticketing/Image Display has been Restored on {node} at {local_time_str}"
-        send_email(smtp_recipients, subject, body, node)
+        if use_memes:
+            generate_meme(successful_restart_meme_path,
+                          f"Xero Ticketing/Image Display has been Restored on {node}",
+                          "", temp_meme_path)
+            send_email(smtp_recipients, subject, body, node, temp_meme_path)
+            os.remove(temp_meme_path)
+        else:
+            send_email(smtp_recipients, subject, body, node)
 
 
 
@@ -573,13 +629,13 @@ def main():
     logging.info("All tasks completed. Shutting down.")
 
 def meme_testing():
-    xero_server = "ADCVWEBPACLX001"
-    generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}",
-                  temp_meme_path)
+    xero_server = "TESTSERVER"
+    generate_meme(successful_restart_meme_path, f"Xero Ticketing/Image Display has been Restored on {xero_server}","", temp_meme_path)
+    #generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}", temp_meme_path)
     subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
     body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
     send_email(smtp_recipients, subject, body, xero_server, temp_meme_path)
-    os.remove(temp_meme_path)
+    #os.remove(temp_meme_path)
 
 if __name__ == '__main__':
     main()
