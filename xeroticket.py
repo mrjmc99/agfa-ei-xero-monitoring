@@ -289,26 +289,6 @@ def construct_email_message(smtp_from, smtp_recipients, subject, body, meme_path
     return msg
 
 
-
-# Helper function to construct email message
-def construct_email_message_old(smtp_from, smtp_recipients, subject, body, meme_path=None):
-    msg = MIMEMultipart() if meme_path else MIMEText(body)
-    msg["From"] = smtp_from
-    msg["To"] = ", ".join(smtp_recipients)
-    msg["Subject"] = subject
-
-    if meme_path:
-        msg.attach(MIMEText(body, 'plain'))
-        meme_data = image_to_base64(meme_path)
-        #meme_cid = 'meme_image'
-        #msg.attach(MIMEText(f'<img src="data:image/jpeg;base64,{meme_data}" alt="Meme" />', 'html'))
-        msg.attach(MIMEImage(base64.b64decode(meme_data), name='meme.jpg'))
-        #msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
-        #msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
-
-    return msg
-
-
 def create_and_send_failure_incident(xero_server, failure_reason):
     local_time_str = datetime.now().time()
     subject = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} ({failure_reason})"
