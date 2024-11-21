@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 import concurrent.futures
 import cx_Oracle
 import urllib3
+import textwrap
 
 # ignore insecure warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -126,26 +127,51 @@ if business_hours_start <= current_time <= business_hours_end and current_day < 
 
 local_time_str = datetime.now().time()
 
+# Function to generate meme with better text size and positioning
 def generate_meme(image_path, top_text, bottom_text, output_path):
     # Open the image
     img = Image.open(image_path)
     draw = ImageDraw.Draw(img)
 
-    # Load a TrueType font
-    font_size = 20  # Adjust the font size as needed
+    # Load the TrueType font
+    max_width = img.width * 0.9  # Allow a 5% margin on either side
+    max_font_size = img.height // 10  # Set a maximum font size based on image height
+
+    font_size = max_font_size
     font = ImageFont.truetype(font_path, font_size)
 
-    # Add top text
-    top_text_width = draw.textlength(top_text, font)
-    draw.text(((img.width - top_text_width) // 2, 10), top_text, (255, 255, 255), font=font)
+    # Reduce font size until text fits within max_width
+    def fit_text_to_width(text, font):
+        while draw.textbbox((0, 0), text, font=font)[2] > max_width and font_size > 10:
+            font = ImageFont.truetype(font_path, font.size - 2)
+        return font
 
-    # Add bottom text
-    bottom_text_width = draw.textlength(bottom_text, font)
-    draw.text(((img.width - bottom_text_width) // 2, img.height - 10), bottom_text, (255, 255, 255), font=font)
+    # Adjust top text font
+    font = fit_text_to_width(top_text, font)
+    wrapped_top_text = textwrap.fill(top_text, width=40)
+
+    # Draw top text
+    top_y_position = 10
+    draw.multiline_text(
+        ((img.width - draw.textbbox((0, 0), wrapped_top_text, font=font)[2]) / 2, top_y_position),
+        wrapped_top_text, fill="white", font=font, align="center"
+    )
+
+    # Adjust bottom text font
+    font = fit_text_to_width(bottom_text, font)
+    wrapped_bottom_text = textwrap.fill(bottom_text, width=40)
+
+    # Draw bottom text at the bottom with a bit of padding
+    bottom_y_position = img.height - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[3] - 20
+    draw.multiline_text(
+        ((img.width - draw.textbbox((0, 0), wrapped_bottom_text, font=font)[2]) / 2, bottom_y_position),
+        wrapped_bottom_text, fill="white", font=font, align="center"
+    )
 
     # Save the meme
     img.save(output_path)
     return output_path
+
 
 
 # disabled server management
@@ -225,11 +251,11 @@ def construct_email_message(smtp_from, smtp_recipients, subject, body, meme_path
     if meme_path:
         msg.attach(MIMEText(body, 'plain'))
         meme_data = image_to_base64(meme_path)
-        meme_cid = 'meme_image'
-        msg.attach(MIMEText(f'<img src="data:image/jpeg;base64,{meme_data}" alt="Meme" />', 'html'))
+        #meme_cid = 'meme_image'
+        #msg.attach(MIMEText(f'<img src="data:image/jpeg;base64,{meme_data}" alt="Meme" />', 'html'))
         msg.attach(MIMEImage(base64.b64decode(meme_data), name='meme.jpg'))
-        msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
-        msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
+        #msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
+        #msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
 
     return msg
 
@@ -546,5 +572,15 @@ def main():
         executor.map(process_node, xero_nodes)
     logging.info("All tasks completed. Shutting down.")
 
+def meme_testing():
+    xero_server = "ADCVWEBPACLX001"
+    generate_meme(unsuccessful_restart_meme_path, "ONE DOES NOT SIMPLY", f"RESTART XERO SERVICES ON {xero_server}",
+                  temp_meme_path)
+    subject = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+    body = f"Xero Ticketing/Image Display has been Restored on {xero_server} at {local_time_str}"
+    send_email(smtp_recipients, subject, body, xero_server, temp_meme_path)
+    os.remove(temp_meme_path)
+
 if __name__ == '__main__':
     main()
+    #meme_testing()
