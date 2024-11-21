@@ -353,13 +353,13 @@ def verify_ticket(xero_server, xero_ticket):
         print(f"An error occurred while attempting to verify the ticket: {e}")
         return False
 
-def verify_and_recover_ticket(xero_server):
+
+def get_and_verify_ticket(xero_server):
     xero_ticket = get_xero_ticket(xero_server)
     if xero_ticket:
         if verify_ticket(xero_server, xero_ticket):
             if DisabledServerManager.is_server_disabled(xero_server):
                 DisabledServerManager.remove_disabled_server(xero_server)
-                send_email(smtp_recipients, f"Xero services restored on {xero_server}", f"Services have been restored on {xero_server}", xero_server)
             return True
     return False
 
@@ -452,7 +452,7 @@ def disable_xero_server(xero_server):
     else:
         logging.info(f"Xero server Disabling successfully: {result}")
         subject = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}"
-        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}To enable the server run the following command on the xero server: sudo agility-haproxy restart"
+        body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo enable the server run the following command on the xero server: sudo agility-haproxy restart"
         #body = f"Xero Ticketing/Image Display has been Disabled on {xero_server} at {local_time_str}\nTo manually purge cache run the following command: sudo /bin/nice -n +15 /bin/find /wado2cache* -mmin +240 -delete \nTo enable the server run the following command on the xero server: sudo agility-haproxy start"
         incident_summary = f"Xero Ticketing/Image Display is failing on {xero_server} at {local_time_str} (Server Disabled)"
         incident_description = body
@@ -505,7 +505,7 @@ def notify_failed_server_pending_upgrade(xero_server):
     return
 
 def process_node(node):
-    if verify_and_recover_ticket(node):
+    if get_and_verify_ticket(node):
         return
     print(f"Ticket Creation failed for {node}")
     if DisabledServerManager.is_server_disabled(node):
@@ -522,10 +522,13 @@ def process_node(node):
     restart_xero_services(node)
     sleep(10)  # Wait and retry
     print("Restart Completed, waiting 10 seconds to retest")
-    if not verify_and_recover_ticket(node):
+    if not get_and_verify_ticket(node):
         print(f"Ticket Creation failed for {node} Disabling Server")
-        create_and_send_failure_incident(node, "Ticket Creation failed after restart")
         disable_xero_server(node)
+    else:
+        subject = f"Xero Ticketing/Image Display has been Restored on {node} at {local_time_str}"
+        body = f"Xero Ticketing/Image Display has been Restored on {node} at {local_time_str}"
+        send_email(smtp_recipients, subject, body, node)
 
 
 
