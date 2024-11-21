@@ -202,11 +202,22 @@ def image_to_base64(image_path):
     return encoded_image
 
 
-# function to send emails, with optional meme attachment
+# Define a unified function to send emails, with optional meme attachment
 def send_email(smtp_recipients, subject, body, node, meme_path=None):
     smtp_from = f"{node}@{smtp_from_domain}"
-    msg = MIMEMultipart() if meme_path else MIMEText(body)
+    msg = construct_email_message(smtp_from, smtp_recipients, subject, body, meme_path)
 
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.sendmail(smtp_from, smtp_recipients, msg.as_string())
+        server.quit()
+        logging.info(f"Email sent to {', '.join(smtp_recipients)}")
+    except Exception as e:
+        logging.error(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
+
+# Helper function to construct email message
+def construct_email_message(smtp_from, smtp_recipients, subject, body, meme_path=None):
+    msg = MIMEMultipart() if meme_path else MIMEText(body)
     msg["From"] = smtp_from
     msg["To"] = ", ".join(smtp_recipients)
     msg["Subject"] = subject
@@ -220,13 +231,7 @@ def send_email(smtp_recipients, subject, body, node, meme_path=None):
         msg.get_payload()[1]._headers.append(('Content-ID', f'<{meme_cid}>'))
         msg.get_payload()[1]._headers.append(('Content-Disposition', f'inline; filename="{meme_cid}"'))
 
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.sendmail(smtp_from, smtp_recipients, msg.as_string())
-        server.quit()
-        logging.info(f"Email sent to {', '.join(smtp_recipients)}")
-    except Exception as e:
-        logging.error(f"Email sending failed to {', '.join(smtp_recipients)}: {e}")
+    return msg
 
 
 def create_and_send_failure_incident(xero_server, failure_reason):
