@@ -57,6 +57,7 @@ xero_server_user = config.get("Xero", "xero_server_user")
 xero_server_private_key = config.get("Xero", "xero_server_private_key")
 xero_get_ticket_timeout = int(config.get("Xero", "xero_get_ticket_timeout"))
 xero_ticket_validation_timeout = int(config.get("Xero", "xero_ticket_validation_timeout"))
+xero_retry_attempts = int(config.get("Xero", "xero_retry_attempts"))
 xero_wado = ast.literal_eval(config.get("Xero", "xero_wado"))
 validation_study_PatientID = config.get("Xero", "validation_study_PatientID")
 validation_study_AccessionNumber = config.get("Xero", "validation_study_AccessionNumber")
@@ -353,20 +354,20 @@ def create_service_now_incident(summary, description, configuration_item, extern
     return None
 
 
-def get_xero_ticket(xero_server):
+def get_xero_ticket(xero_server, retry_amount=xero_retry_attempts):
     api_url = f"https://{xero_server}/encodedTicket"
 
     # URL encode the query constraints and display vars
     query_constraints_encoded = urllib.parse.quote(query_constraints)
     display_vars_encoded = urllib.parse.quote(display_vars)
-    #logging.info(query_constraints_encoded)
-    #logging.info(display_vars_encoded)
+    # logging.info(query_constraints_encoded)
+    # logging.info(display_vars_encoded)
     payload = {
         "user": xero_user,
         "password": xero_password,
         "domain": xero_domain,
         "queryConstraints": query_constraints_encoded,
-        #"initialDisplay": display_vars_encoded,
+        # "initialDisplay": display_vars_encoded,
         "ticketDuration": "300",
         "uriEncodedTicket": "true",
         "ticketUser": "TICKET_TESTING_USER",
@@ -375,46 +376,51 @@ def get_xero_ticket(xero_server):
 
     headers = {}
 
-    try:
-        logging.info(f"Testing Ticket Creation for {xero_server}")
-        response = requests.post(api_url, headers=headers, data=payload, verify=False, timeout=xero_get_ticket_timeout)
-        #logging.info(f"{xero_server} Ticket Creation Response Status Code:",
-              #response.status_code)  # Print status code for debugging
-        if response.status_code == 200:
-            logging.info(f"{xero_server} created a ticket successfully")
-            #logging.info(response.text)
-            return response.text
-        else:
-            logging.info(f"{xero_server} Ticket Creation Failure")
-            return None
+    for attempt in range(retry_amount):
+        try:
+            logging.info(f"Testing Ticket Creation for {xero_server}, Attempt {attempt + 1}")
+            response = requests.post(api_url, headers=headers, data=payload, verify=False,
+                                     timeout=xero_get_ticket_timeout)
+            # logging.info(f"{xero_server} Ticket Creation Response Status Code: {response.status_code}")  # Print status code for debugging
+            if response.status_code == 200:
+                logging.info(f"{xero_server} created a ticket successfully")
+                # logging.info(response.text)
+                return response.text
+            else:
+                logging.info(f"{xero_server} Ticket Creation Failure, Status Code: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"An error occurred while attempting to create xero tickets on {xero_server}: {e}")
 
-    except requests.exceptions.RequestException as e:
-        logging.error(f"An error occurred while attempting to create xero tickets on {xero_server}: {e}")
-        return None
+        # Wait before retrying
+        sleep(2)
+
+    logging.error(f"Failed to create xero ticket after {retry_amount} attempts")
+    return None
 
 
-def verify_ticket(xero_server, xero_ticket):
-    try:
-        # Append the ticket as a query parameter to the verification URL
-        #verification_url = f"https://{xero_server}/?ticket={xero_ticket}"
-        verification_url = f"https://{xero_server}/?PatientID={validation_study_PatientID}&AccessionNumber={validation_study_AccessionNumber}&theme={xero_theme}&ticket={xero_ticket}"
-        #logging.info(verification_url)
-        #logging.info(xero_ticket)
-        response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
+def verify_ticket(xero_server, xero_ticket, retry_amount=xero_retry_attempts):
+    verification_url = f"https://{xero_server}/?PatientID={validation_study_PatientID}&AccessionNumber={validation_study_AccessionNumber}&theme={xero_theme}&ticket={xero_ticket}"
 
-        #logging.info(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
-        # logging.info(f"Verification URL Response Content: {response.text}")
+    for attempt in range(retry_amount):
+        try:
+            logging.info(f"Verifying Ticket for {xero_server}, Attempt {attempt + 1}")
+            response = requests.get(verification_url, verify=False, timeout=xero_ticket_validation_timeout)
+            # logging.info(f"{xero_server} Verification URL Response Status Code: {response.status_code}")
+            # logging.info(f"Verification URL Response Content: {response.text}")
 
-        if response.status_code == 200:
-            logging.info(f"{xero_server} Ticket verification successful")
-            return True
-        else:
-            logging.info(f"{xero_server} Ticket verification failed")
-            return False
+            if response.status_code == 200:
+                logging.info(f"{xero_server} Ticket verification successful")
+                return True
+            else:
+                logging.info(f"{xero_server} Ticket verification failed, Status Code: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"An error occurred while attempting to verify the ticket: {e}")
 
-    except requests.exceptions.RequestException as e:
-        logging.error(f"An error occurred while attempting to verify the ticket: {e}")
-        return False
+        # Wait before retrying
+        sleep(2)
+
+    logging.error(f"Failed to verify xero ticket after {retry_amount} attempts")
+    return False
 
 
 def get_and_verify_ticket(xero_server):
