@@ -23,18 +23,20 @@ import textwrap
 # ignore insecure warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Get the absolute path of the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 # Set up logging
+log_file_path = os.path.join(script_dir, "xero_ticket.log")
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s]: %(message)s',
     handlers=[
-        logging.FileHandler("xero_ticket.log"),
+        logging.FileHandler(log_file_path),
         logging.StreamHandler()
     ]
 )
 
-# Get the absolute path of the script
-script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Construct the absolute path of the configuration file
 config_file_path = os.path.join(script_dir, "xeroticket.ini")
