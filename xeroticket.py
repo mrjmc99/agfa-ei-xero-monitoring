@@ -432,6 +432,7 @@ def get_and_verify_ticket(xero_server):
             if DisabledServerManager.is_server_disabled(xero_server):
                 DisabledServerManager.remove_disabled_server(xero_server)
             return True
+        return False
     return False
 
 
