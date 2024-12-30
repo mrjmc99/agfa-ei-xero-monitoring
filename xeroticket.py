@@ -462,8 +462,15 @@ def check_for_upgrade(xero_server):
         result = cursor.fetchone()
         logging.info(f"upgrade check for {xero_server} result is:{result}")
         return result is not None
+
     except cx_Oracle.DatabaseError as e:
-        logging.error(f"Database error occurred: {e}")
+        # Specifically catch Oracle-related errors
+        logging.error(f"Database error occurred: {e}; continuing with restarts...")
+        return False
+
+    except Exception as e:
+        # Catch ANY other exception
+        logging.error(f"An unexpected error occurred: {e}")
         return False
     finally:
         cursor.close()
@@ -583,7 +590,6 @@ def process_node(node):
     if DisabledServerManager.is_server_disabled(node):
         logging.info(f"Skipping {node} - Server is already disabled.")
         return
-
 
     server_in_prepare_status = check_for_upgrade(node)
     if server_in_prepare_status:
